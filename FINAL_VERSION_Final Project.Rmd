@@ -1,0 +1,1150 @@
+---
+title: "Data-Driven Strategy for App Success on Google Play"
+author: "MKT 566 Group: Teresa Hu, Rohan Chhabra, Hasham Kaiser, Dhruvika Joshi, Vania Prayogo"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+fontsize: 11pt
+---
+
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(lubridate)
+library(scales)
+
+
+file_path <- '/Users/Vania/Desktop/MKT566/FINAL GROUP PROJECT/Finals/Google-Playstore.csv'
+df <- fread(file_path, encoding = "UTF-8")
+```
+
+# Introduction
+The Google Play store has millions of mobile apps that are competing for installations, high ratings, and virality. This report analyzes a comprehensive dataset of Google Play store apps to uncover key drivers of app installs, ratings, and success. We perform data cleaning, exploratory data analysis, and regression modeling to identify factors that influence app performance. Additionally, we address specific research questions around pricing strategies, app size optimization, update frequency, and the free vs paid app dichotomy. The insights derived from this analysis can inform app developers and marketers on best practices to maximize app adoption and user satisfaction.
+
+
+
+# Data Description and Cleaning
+```{r data-loading}
+
+# Read Google Play Store data
+
+file_path <- '/Users/Vania/Desktop/MKT566/FINAL GROUP PROJECT/Finals/Google-Playstore.csv'
+df <- fread(file_path, encoding = "UTF-8")
+
+# Basic dimensions
+
+cat("Raw data - Rows:", nrow(df), "| Columns:", ncol(df), "\n")
+
+
+```
+
+```{r data-cleaning}
+# Clean column names: replace spaces with underscores
+
+setnames(df, gsub(" ", "_", names(df)))
+
+# Convert columns to appropriate data types
+
+df[, `:=`(
+Rating           = as.numeric(Rating),
+Rating_Count     = as.numeric(Rating_Count),
+Minimum_Installs = as.numeric(gsub(",", "", Minimum_Installs)),
+Maximum_Installs = as.numeric(Maximum_Installs),
+Price            = as.numeric(Price),
+Size             = as.numeric(Size),
+Free             = as.logical(Free),
+Ad_Supported     = as.logical(Ad_Supported),
+In_App_Purchases = as.logical(In_App_Purchases),
+Editors_Choice   = as.logical(Editors_Choice),
+Released         = as.Date(Released,     format = "%b %d, %Y"),
+Last_Updated     = as.Date(Last_Updated, format = "%b %d, %Y")
+)]
+
+# Remove duplicate apps based on App_Id
+
+df <- unique(df, by = "App_Id")
+
+# Create app age and recency of update (relative to a fixed reference date)
+
+reference_date <- as.Date("2021-06-30")
+
+df[, `:=`(
+app_age_days     = as.numeric(reference_date - Released),
+days_since_update = as.numeric(reference_date - Last_Updated)
+)]
+
+# Treat Rating == 0 as no rating (set to NA)
+
+df[Rating == 0, Rating := NA]
+
+# Summary of missing values
+
+na_summary <- data.frame(
+Column  = names(df),
+Missing = sapply(df, function(x) sum(is.na(x))),
+Pct     = round(sapply(df, function(x) mean(is.na(x))) * 100, 1)
+)
+
+na_summary[na_summary$Missing > 0, ]
+
+
+# Keep only apps with at least one install
+
+df_analysis <- df[Maximum_Installs > 0]
+
+cat("Full data:", nrow(df), "\n")
+cat("Analysis subset:", nrow(df_analysis), "\n")
+cat("% retained:", round(nrow(df_analysis) / nrow(df) * 100, 1), "%\n")
+
+# Quick summary of key variables in the analysis subset
+
+summary(df_analysis[, .(Rating, Rating_Count, Maximum_Installs, Size, Price)])
+
+# Basic size sanity checks
+
+summary(df_analysis$Size)
+cat("Size = 0:", sum(df_analysis$Size == 0, na.rm = TRUE), "\n")
+cat("Size = NA:", sum(is.na(df_analysis$Size)), "\n")
+
+# Remove impossible / clearly invalid values
+
+df_clean <- df_analysis[
+Maximum_Installs <= 1e10 &        # remove extreme outliers
+(is.na(Size) | Size > 0)          # drop non-positive sizes
+]
+
+cat("Before:", nrow(df_analysis), "\n")
+cat("After:", nrow(df_clean), "\n")
+cat("Removed:", nrow(df_analysis) - nrow(df_clean), "\n")
+
+
+# Reload original Size text with App_Id to parse MB/GB correctly
+
+size_data <- fread(file_path, select = c("App Id", "Size"), encoding = "UTF-8")
+setnames(size_data, c("App_Id", "Size_raw"))
+
+# Merge raw size into cleaned dataset
+
+df_clean <- merge(df_clean, size_data, by = "App_Id", all.x = TRUE)
+
+# Convert textual sizes (e.g. '25M', '1.2G', '500k') into numeric MB
+
+df_clean[, Size_MB := as.numeric(gsub("M", "", Size_raw))]
+df_clean[grepl("G", Size_raw), Size_MB := as.numeric(gsub("G", "", Size_raw)) * 1000]
+df_clean[grepl("k", Size_raw), Size_MB := as.numeric(gsub("k", "", Size_raw)) / 1000]
+
+summary(df_clean$Size_MB)
+
+# Remove apps with unknown size
+
+df_clean <- df_clean[!is.na(Size_MB)]
+cat("Apps after removing NA Size:", nrow(df_clean), "\n")
+
+
+
+```
+# Reasoning for Data Cleaning Steps
+Loading and renaming variables
+We standardized column names by replacing spaces with underscores to ensure variables could be referenced consistently in code and modeling workflows without syntax issues.
+
+Converting data types
+We converted fields such as installs, ratings, prices, and dates into appropriate numeric and date formats because statistical models and visualizations require properly typed variables to compute relationships accurately.
+
+Removing duplicate apps
+Duplicate app entries were removed using the unique App_Id identifier to prevent certain apps from disproportionately influencing results and biasing our estimates.
+
+Handling zero ratings
+A rating value of 0 was recoded as NA since it represents the absence of ratings rather than a true zero score; keeping it would artificially lower summary statistics and distort regression outcomes.
+
+Creating app_age_days and days_since_update
+We engineered time-based variables measuring how long an app has been available and how recently it was updated, as app lifecycle and maintenance frequency are known determinants of user engagement and install velocity.
+
+Filtering out apps with zero installs
+We restricted our analysis to apps with at least one install to focus on observable market performance—apps without users cannot contribute meaningful insights into adoption patterns or drivers of success.
+
+Assessing missing data
+Missing values were quantified across variables to identify potential measurement issues and ensure that any omissions were accounted for before modeling, preventing silent bias in downstream results.
+
+
+# Exploratory Data Analysis
+
+## Category Performance
+```{r}
+category_stats <- df_clean[, .(
+  Apps = .N,
+  Avg_Rating = round(mean(Rating, na.rm = TRUE), 2),
+  Median_Installs = median(Maximum_Installs),
+  Avg_Installs = round(mean(Maximum_Installs), 0)
+), by = Category][order(-Median_Installs)]
+
+head(category_stats, 15)
+
+ggplot(category_stats[1:15], aes(
+x = reorder(Category, -Median_Installs),
+y = Median_Installs
+)) +
+geom_col(fill = "#2E86AB") +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Top Categories by Median Installs",
+x = "Category", y = "Median Installs (log scale)") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+## Free vs Paid
+```{r}
+df_clean[, .(
+  Apps = .N,
+  Avg_Rating = round(mean(Rating, na.rm = TRUE), 2),
+  Median_Installs = median(Maximum_Installs)
+), by = Free]
+
+
+# Plot
+ggplot(df_clean, aes(x = Free, y = Maximum_Installs)) +
+geom_boxplot(fill = "#F6C90E") +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Installs by Free vs Paid Apps",
+x = "Free App", y = "Maximum Installs (log scale)") +
+theme_minimal()
+```
+
+## Monetization Strategy
+```{r}
+df_clean[, .(
+  Apps = .N,
+  Avg_Rating = round(mean(Rating, na.rm = TRUE), 2),
+  Median_Installs = median(Maximum_Installs)
+), by = .(Free, Ad_Supported, In_App_Purchases)][order(-Median_Installs)]
+
+monet_stats <- df_clean[, .(
+Median_Installs = median(Maximum_Installs)
+), by = .(Free, Ad_Supported, In_App_Purchases)]
+
+ggplot(monet_stats, aes(
+x = interaction(Free, Ad_Supported, In_App_Purchases),
+y = Median_Installs,
+fill = Free
+)) +
+geom_col() +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Median Installs by Monetization Model",
+x = "Free / Ads / IAP Combination",
+y = "Median Installs (log scale)") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+## Update Frequency
+```{r}
+df_clean[, update_recency := cut(days_since_update,
+  breaks = c(-Inf, 30, 90, 180, 365, Inf),
+  labels = c("<30 days", "30-90 days", "90-180 days", "180-365 days", "365+ days")
+)]
+
+df_clean[!is.na(update_recency), .(
+  Apps = .N,
+  Avg_Rating = round(mean(Rating, na.rm = TRUE), 2),
+  Median_Installs = median(Maximum_Installs)
+), by = update_recency][order(update_recency)]
+
+upd <- df_clean[!is.na(update_recency),
+.(Median_Installs = median(Maximum_Installs)),
+by = update_recency]
+
+ggplot(upd, aes(x = update_recency, y = Median_Installs)) +
+geom_col(fill = "#27AE60") +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Impact of Update Recency on Installs",
+x = "Last Update",
+y = "Median Installs (log scale)") +
+theme_minimal()
+
+```
+
+
+## Editor's Choice vs Regular Apps
+```{r}
+df_clean[, .(
+Apps = .N,
+Avg_Rating = round(mean(Rating, na.rm = TRUE), 2),
+Median_Installs = median(Maximum_Installs)
+), by = Editors_Choice]
+
+ggplot(df_clean, aes(x = Editors_Choice, y = Maximum_Installs)) +
+geom_boxplot(fill = "#E94F37") +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Installs by Editor's Choice Status",
+x = "Editor's Choice", y = "Maximum Installs (log scale)") +
+theme_minimal()
+
+```
+
+Editor’s Choice apps are a very small share of the catalog, but they tend to have higher ratings and substantially more installs than regular apps, indicating strong promotion and curation effects from the store. It is important to note that editor's choice is not something the app developer has control over, it is a list that is chosen by people from Google Play. The best thing our client, or any app developer, can do is to create the best app possible with the features we will discuss more.
+
+## Ratings and Installs
+```{r}
+df_clean[!is.na(Rating), .(
+Apps            = .N,
+Median_Installs = median(Maximum_Installs),
+Avg_Installs    = round(mean(Maximum_Installs), 0)
+), by = .(Rating_Tier = cut(
+Rating,
+breaks = c(0, 2, 3, 3.5, 4, 4.5, 5),
+labels = c("<2", "2-3", "3-3.5", "3.5-4", "4-4.5", "4.5-5")
+))][order(Rating_Tier)]
+
+rating_stats <- df_clean[!is.na(Rating), .(
+Median_Installs = median(Maximum_Installs)
+), by = .(Rating_Tier = cut(
+Rating,
+breaks = c(0, 2, 3, 3.5, 4, 4.5, 5),
+labels = c("<2", "2-3", "3-3.5", "3.5-4", "4-4.5", "4.5-5")
+))]
+
+ggplot(rating_stats, aes(x = Rating_Tier, y = Median_Installs)) +
+geom_col(fill = "#8E44AD") +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Median Installs by Rating Tier",
+x = "Rating Tier", y = "Median Installs (log scale)") +
+theme_minimal()
+```
+
+Apps with mid-high ratings (around 3.5–4 stars) tend to have the highest median installs. Very popular apps attract a broad audience and more criticism, so their ratings are slightly lower despite strong adoption.
+
+## Content Rating
+```{r}
+df_clean[, .(
+Apps            = .N,
+Avg_Rating      = round(mean(Rating, na.rm = TRUE), 2),
+Median_Installs = median(Maximum_Installs)
+), by = Content_Rating][order(-Median_Installs)]
+
+ggplot(df_clean, aes(x = Content_Rating, y = Maximum_Installs)) +
+geom_boxplot(fill = "#D35400") +
+scale_y_log10(labels = scales::comma) +
+labs(title = "Installs by Content Rating",
+x = "Content Rating", y = "Maximum Installs (log scale)") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+# Drivers of Installs - Correlation and Regression
+```{r-correlation_analysis}
+# Numeric-only view of relationships with installs
+
+df_cor <- df_clean[!is.na(Rating), .(
+Installs      = log1p(Maximum_Installs),
+Rating        = Rating,
+Rating_Count  = log1p(Rating_Count),
+Age_Days      = app_age_days,
+Update_Days   = days_since_update,
+Free          = as.integer(Free),
+Ads           = as.integer(Ad_Supported),
+IAP           = as.integer(In_App_Purchases)
+)]
+
+round(cor(df_cor, use = "complete.obs"), 2)
+print(cor(df_cor, use = "complete.obs"), 2)
+
+
+
+```
+
+Log installs are strongly correlated with rating count and positively related to monetization features (ads, in-app purchases), while the relationships with rating level and update recency are weaker but still informative.
+
+
+```{r baseline_regression}
+# Prepare data for regression
+
+df_reg <- df_clean[!is.na(Rating) & !is.na(days_since_update), .(
+log_installs    = log1p(Maximum_Installs),
+Rating,
+log_rating_count = log1p(Rating_Count),
+app_age_days,
+days_since_update,
+Free            = as.integer(Free),
+Ads             = as.integer(Ad_Supported),
+IAP             = as.integer(In_App_Purchases),
+Editors_Choice  = as.integer(Editors_Choice)
+)]
+
+model <- lm(
+log_installs ~ Rating + log_rating_count + app_age_days +
+days_since_update + Free + Ads + IAP + Editors_Choice,
+data = df_reg
+)
+
+summary(model)
+
+coefs <- data.frame(
+Variable   = names(coef(model)),
+Estimate   = round(coef(model), 4),
+Pct_Impact = paste0(round((exp(coef(model)) - 1) * 100, 1), "%")
+)
+coefs
+print(coefs)
+
+```
+
+Controlling for rating volume, free pricing, in-app purchases, ads, and Editor’s Choice status are all associated with higher installs; however, including rating count makes the model limited, since rating count itself is a consequence of installs.
+
+
+```{r regression_no_rating_count}
+model2 <- lm(
+log_installs ~ Rating + app_age_days + days_since_update +
+Free + Ads + IAP + Editors_Choice,
+data = df_reg
+)
+
+summary(model2)
+
+coefs2 <- data.frame(
+Variable   = names(coef(model2)),
+Estimate   = round(coef(model2), 4),
+Pct_Impact = paste0(round((exp(coef(model2)) - 1) * 100, 1), "%")
+)
+coefs2
+print(coefs2)
+
+```
+
+Without rating count, the effect of rating level becomes more pronounced, and free apps, ad-supported apps, and apps with IAP all show large positive effects regarding installs compared to paid apps.
+
+
+```{{r regression_with_size}}
+df_reg2 <- df_clean[
+!is.na(Rating) & !is.na(days_since_update) & !is.na(Size_MB),
+.(
+log_installs = log1p(Maximum_Installs),
+Rating,
+app_age_days,
+days_since_update,
+Free  = as.integer(Free),
+Ads   = as.integer(Ad_Supported),
+IAP   = as.integer(In_App_Purchases),
+Editors_Choice = as.integer(Editors_Choice),
+log_size = log1p(Size_MB)
+)
+]
+
+model3 <- lm(
+log_installs ~ Rating + app_age_days + days_since_update +
+Free + Ads + IAP + log_size,
+data = df_reg2
+)
+
+summary(model3)
+
+coefs3 <- data.frame(
+Variable   = names(coef(model3)),
+Estimate   = round(coef(model3), 4),
+Pct_Impact = round((exp(coef(model3)) - 1) * 100, 1)
+)
+coefs3
+print(coefs3)
+
+```
+
+```{r visual_summary}
+effects <- data.frame(
+Factor = c("Editor's Choice", "IAP", "Free", "Ads", "Rating (+1 star)", "Update (-30 days)"),
+Impact = c(16327, 283, 239, 231, -53, -3)
+)
+
+ggplot(effects, aes(x = reorder(Factor, Impact), y = Impact, fill = Impact > 0)) +
+geom_col() +
+coord_flip() +
+scale_fill_manual(values = c("tomato", "steelblue"), guide = "none") +
+labs(title = "What Drives App Installs?",
+subtitle = "% change in installs (regression-based estimates)",
+x = "", y = "% Impact") +
+theme_minimal()
+
+effects2 <- data.frame(
+Factor = c("In-App Purchases", "Free (vs Paid)", "Ads Supported",
+"Rating (+1 star)", "Update Recency (-30 days)"),
+Impact = c(283, 239, 231, -53, -3)
+)
+
+ggplot(effects2, aes(x = reorder(Factor, Impact), y = Impact, fill = Impact > 0)) +
+geom_col(width = 0.7) +
+geom_text(
+aes(label = paste0(ifelse(Impact > 0, "+", ""), Impact, "%")),
+hjust = ifelse(effects2$Impact > 0, -0.1, 1.1),
+size = 4
+) +
+coord_flip() +
+scale_fill_manual(values = c("#E74C3C", "#27AE60"), guide = "none") +
+labs(title = "What Drives App Installs?",
+subtitle = "Key factors your client can control",
+x = "", y = "% Impact on Installs") +
+theme_minimal(base_size = 14) +
+scale_y_continuous(limits = c(-100, 380))
+
+df_clean[!is.na(Size_MB), .(
+Apps            = .N,
+Avg_Rating      = round(mean(Rating, na.rm = TRUE), 2),
+Median_Installs = median(Maximum_Installs)
+), by = .(Size_Tier = cut(
+Size_MB,
+breaks = c(0, 5, 10, 25, 50, 100, Inf),
+labels = c("<5 MB", "5–10 MB", "10–25 MB", "25–50 MB", "50–100 MB", "100+ MB")
+))][order(Size_Tier)]
+
+```
+
+Interpretation of Regression
+The visual summary highlights the key drivers of app installs based on regression analysis. The most significant factor is being an Editor's Choice app, but as we know, this is not something app developers can control. Instead, factors such as in-app purchases and an app being free (versus paid) also have substantial positive impacts on installs, suggesting that monetization strategies play a crucial role in attracting users. Additionally, ad-supported apps tend to see higher installs, indicating that users may prefer apps that offer free content supported by ads.
+
+
+# Research Questions
+
+## Q1: Free vs Paid
+```{r}
+# Do free apps achieve higher installs and ratings?
+# Summary comparison: free vs paid
+
+
+q1_summary <- df_clean[, .(
+Apps            = .N,
+Median_Installs = median(Maximum_Installs),
+Avg_Installs    = round(mean(Maximum_Installs), 0),
+Avg_Rating      = round(mean(Rating, na.rm = TRUE), 3),
+Median_Rating   = median(Rating, na.rm = TRUE)
+), by = Free]
+q1_summary
+
+# Installs: non-parametric test (highly skewed)
+
+wilcox.test(Maximum_Installs ~ Free, data = df_clean)
+
+# Ratings: t-test (approximate comparison of means)
+
+t.test(Rating ~ Free, data = df_clean)
+
+library(gridExtra)
+
+p1 <- ggplot(df_clean, aes(x = Free, y = Maximum_Installs, fill = Free)) +
+geom_boxplot() +
+scale_y_log10(labels = scales::comma) +
+scale_fill_manual(values = c("#E74C3C", "#27AE60"), labels = c("Paid", "Free")) +
+labs(title = "Installs: Free vs Paid",
+x = "", y = "Installs (log scale)") +
+theme_minimal() +
+theme(legend.position = "none")
+
+p2 <- ggplot(df_clean[!is.na(Rating)], aes(x = Free, y = Rating, fill = Free)) +
+geom_boxplot() +
+scale_fill_manual(values = c("#E74C3C", "#27AE60"), labels = c("Paid", "Free")) +
+labs(title = "Ratings: Free vs Paid",
+x = "", y = "Rating") +
+theme_minimal() +
+theme(legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 2)
+
+
+
+```
+
+```{r fig.width=12, fig.height=5}
+free_paid <- df_clean[, .(
+  Apps = .N,
+  Median_Installs = median(Maximum_Installs),
+  Avg_Rating = round(mean(Rating, na.rm = TRUE), 2)
+), by = Free]
+
+# Create Type column from Free
+free_paid[, Type := ifelse(Free == TRUE, "Free", "Paid")]
+
+p1 <- ggplot(free_paid, aes(x = Type, y = Median_Installs, fill = Type)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = scales::comma(Median_Installs)), vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("Free" = "#27AE60", "Paid" = "#E74C3C"), guide = "none") +
+  scale_y_continuous(labels = scales::comma, limits = c(0, 900)) +
+  labs(title = "Free Apps Get 2.7x More Installs", x = "", y = "Median Installs") +
+  theme_minimal(base_size = 12)
+
+p2 <- ggplot(free_paid, aes(x = Type, y = Avg_Rating, fill = Type)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = Avg_Rating), vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("Free" = "#27AE60", "Paid" = "#E74C3C"), guide = "none") +
+  scale_y_continuous(limits = c(0, 5)) +
+  labs(title = "But Paid Apps Rate Slightly Higher", x = "", y = "Avg Rating") +
+  theme_minimal(base_size = 12)
+
+p3 <- ggplot(free_paid, aes(x = Type, y = Apps/1000, fill = Type)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = paste0(round(Apps/1000000, 1), "M")), vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("Free" = "#27AE60", "Paid" = "#E74C3C"), guide = "none") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Free Dominates the Market (98%)", x = "", y = "Apps (thousands)") +
+  theme_minimal(base_size = 12)
+
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+Answer to Q1
+Free apps significantly outperform paid apps in terms of installs, achieving a median install count that is approximately 2.7 times higher than that of paid apps. This suggests that the barrier to entry for users is lower for free apps, leading to broader adoption. However, paid apps tend to have slightly higher average ratings, indicating that while they attract fewer users, those users may perceive the app as offering higher value or quality. Overall, the market is overwhelmingly dominated by free apps, which constitute 98% of the available apps, highlighting the importance of a free pricing strategy for maximizing reach and installs.
+
+## Q2: Optimal App Size
+```{r}
+# Q2: Is there an optimal app size that maximizes installs?
+
+# 1) Bucket apps by size and compute installs/ratings per bucket
+
+q2_size <- df_clean[!is.na(Size_MB), .(
+Apps = .N,
+Median_Installs = median(Maximum_Installs),
+Avg_Installs = round(mean(Maximum_Installs), 0),
+Avg_Rating = round(mean(Rating, na.rm = TRUE), 2)
+), by = .(Size_Tier = cut(
+Size_MB,
+breaks = c(0, 5, 10, 15, 25, 50, 100, 200, Inf),
+labels = c("<5", "5-10", "10-15", "15-25", "25-50", "50-100", "100-200", "200+")
+))][order(Size_Tier)]
+
+q2_size
+
+# 2) Identify the size tier with the highest median installs
+
+q2_size[which.max(Median_Installs)]
+
+
+# 3) Visual: Bars = median installs, line = average rating
+
+ggplot(q2_size, aes(x = Size_Tier, y = Median_Installs)) +
+geom_col(fill = "steelblue") +
+geom_line(aes(y = Avg_Rating * max(Median_Installs) / 5, group = 1),
+color = "#E74C3C", size = 1.1) +
+geom_point(aes(y = Avg_Rating * max(Median_Installs) / 5),
+color = "#E74C3C", size = 3) +
+scale_y_continuous(
+labels = scales::comma,
+sec.axis = sec_axis(~ . * 5 / max(q2_size$Median_Installs),
+name = "Average Rating")
+) +
+labs(title = "Optimal App Size for Installs",
+subtitle = "Bars: Median installs | Red line: average rating",
+x = "App Size (MB)", y = "Median Installs") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# 4) Create a stratified sample so the scatterplot isn't dominated by huge apps
+
+set.seed(123)
+
+df_clean[, install_tier := cut(
+Maximum_Installs,
+breaks = c(0, 1e3, 1e4, 1e5, 1e6, Inf),
+labels = c("0-1K", "1K-10K", "10K-100K", "100K-1M", "1M+")
+)]
+
+df_sample <- df_clean[, .SD[sample(.N, min(.N, 10000))], by = install_tier]
+
+cat("Sampled rows:", nrow(df_sample), "\n")
+table(df_sample$install_tier)
+
+
+# 5) Scatterplot of size vs installs using the sample
+
+ggplot(df_sample[Size_MB < 200], aes(x = Size_MB, y = Maximum_Installs)) +
+geom_point(alpha = 0.1, size = 0.5) +
+geom_smooth(method = "loess", color = "#E74C3C", se = TRUE) +
+scale_y_log10(labels = scales::comma) +
+labs(title = "App Size vs Installs",
+subtitle = "Stratified sample",
+x = "Size (MB)", y = "Installs (log scale)") +
+theme_minimal()
+
+
+
+```
+
+
+
+Answer to Question 2
+The analysis indicates that the optimal app size for maximizing installs falls within the 50-100 mb range, but also 20-50 mb range shows high median installs. Apps in this size range tend to balance functionality and performance, providing sufficient features without overwhelming users with large download sizes. That being said, once an app size gets to about 150 mb or more, there is a significant drop off in median installs. Additionally, the average rating remains relatively stable across different size tiers, suggesting that users do not significantly penalize larger apps as long as they deliver value. Therefore, developers should aim to optimize their app size to fall within this optimal range to enhance install rates while maintaining user satisfaction.
+
+## Q3: Update Recency
+```{r}
+# Q3: Correlation between update recency / app age and rating
+
+# 1) Keep only apps with all three fields present
+
+q3_cor <- df_clean[!is.na(Rating) & !is.na(days_since_update) & !is.na(app_age_days),
+.(Rating, days_since_update, app_age_days)]
+
+# 2) Compute simple correlations
+
+cat("Correlation: Rating vs Days Since Update:",
+round(cor(q3_cor$Rating, q3_cor$days_since_update), 4), "\n")
+cat("Correlation: Rating vs App Age:",
+round(cor(q3_cor$Rating, q3_cor$app_age_days), 4), "\n")
+
+# 3) Statistical tests for significance
+
+cor.test(q3_cor$Rating, q3_cor$days_since_update)
+cor.test(q3_cor$Rating, q3_cor$app_age_days)
+
+# 4) Ratings by update recency bucket
+
+q3_update <- df_clean[!is.na(Rating) & !is.na(update_recency), .(
+Apps = .N,
+Avg_Rating = round(mean(Rating), 3),
+Median_Rating = median(Rating)
+), by = update_recency][order(update_recency)]
+
+q3_update
+
+# 5) Visuals: ratings vs days_since_update and app_age_days
+
+p3a <- ggplot(df_clean[!is.na(Rating) & days_since_update < 1000],
+aes(x = days_since_update, y = Rating)) +
+geom_point(alpha = 0.02, size = 0.5) +
+geom_smooth(method = "lm", color = "#E74C3C") +
+labs(title = "Update Recency vs Rating",
+x = "Days Since Last Update", y = "Rating") +
+theme_minimal()
+
+p3b <- ggplot(df_clean[!is.na(Rating) & app_age_days < 2000],
+aes(x = app_age_days, y = Rating)) +
+geom_point(alpha = 0.02, size = 0.5) +
+geom_smooth(method = "lm", color = "#27AE60") +
+labs(title = "App Age vs Rating",
+x = "App Age (Days)", y = "Rating") +
+theme_minimal()
+
+gridExtra::grid.arrange(p3a, p3b, ncol = 2)
+
+
+```
+Answer to Q3
+Frequent updates do drive stronger growth and updated apps consistently see stronger install momentum, as freshness boosts visibiluty and user interest. While their is not a strong correlation, irregular updates are associated with a decline in ratings, signaling a less reliable or less actively maintained product. 
+
+
+
+## Q4: Price Optimization Analysis
+```{r}
+# 1) Keep only paid apps with reasonable prices
+
+paid_apps <- df_clean[Free == FALSE & Price > 0 & Price < 100]
+cat("Paid apps:", nrow(paid_apps), "\n")
+
+# 2) Define "viral" = top 5% of paid apps by installs
+
+viral_threshold <- quantile(paid_apps$Maximum_Installs, 0.95)
+cat("Viral threshold (top 5% of paid):",
+scales::comma(viral_threshold), "installs\n")
+
+paid_apps[, viral := ifelse(Maximum_Installs >= viral_threshold, 1, 0)]
+table(paid_apps$viral)
+
+# 3) Summarize viral rate by price tier
+
+q5_price <- paid_apps[, .(
+Apps          = .N,
+Viral_Apps    = sum(viral),
+Viral_Rate    = round(mean(viral) * 100, 2),
+Median_Installs = median(Maximum_Installs)
+), by = .(Price_Tier = cut(
+Price,
+breaks = c(0, 0.99, 1.99, 2.99, 4.99, 9.99, 19.99, Inf),
+labels = c("<$1", "$1-2", "$2-3", "$3-5",
+"$5-10", "$10-20", "$20+")
+))][order(Price_Tier)]
+
+q5_price
+
+# 4) Logistic regression of viral ~ Price
+
+viral_model <- glm(viral ~ Price, data = paid_apps, family = binomial)
+summary(viral_model)
+
+
+# 5) Visual: viral rate by price tier
+
+ggplot(q5_price, aes(x = Price_Tier, y = Viral_Rate)) +
+geom_col(fill = "steelblue") +
+geom_text(aes(label = paste0(Viral_Rate, "%")),
+vjust = -0.5, size = 3.5) +
+labs(title = "Price vs Viral Success Rate (Paid Apps)",
+subtitle = "Viral = Top 5% installs among paid apps",
+x = "Price Range", y = "Viral Success Rate (%)") +
+theme_minimal() +
+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# 6) Visual: predicted viral probability as a smooth function of price
+
+price_range <- data.frame(Price = seq(0.5, 50, 0.5))
+price_range$viral_prob <- predict(viral_model, newdata = price_range, type = "response")
+
+ggplot(price_range, aes(x = Price, y = viral_prob * 100)) +
+geom_line(color = "#E74C3C", size = 1.1) +
+labs(title = "Price vs Probability of Viral Success (Paid Apps)",
+subtitle = "Logistic regression prediction",
+x = "Price ($)", y = "Predicted Viral Probability (%)") +
+theme_minimal()
+
+
+
+```
+
+Answer to Q4
+Viral probability decreases as price increases, and viral hits concentrate in the $0-$5 range. Apps priced under $1 have the highest viral success rate at 8.5%, while those priced above $20 see a significant drop to just 1.2%. The logistic regression model confirms this negative relationship, indicating that lower-priced apps are more likely to achieve viral status. Therefore, developers aiming for viral success should consider pricing their apps competitively within the lower price tiers to maximize adoption and word-of-mouth spread. Our recommendation is keep upfront price very low or free, and monetize through IAPs, ads, or subscriptions to recoup costs in the long term. 
+
+# Extra Analysis
+Below is extra analysis that we did that did not make it into the presentatio. We cut these for time and because some of the models were not as useful due to low sensitivity and a lack of pertinent information for our specific research questions.
+
+# Editor's Choice: What it Takes
+```{r fig.width=12, fig.height=6}
+# Calculate stats for Editor's Choice vs Regular
+ec_stats <- df_clean[, .(
+  `Avg Size (MB)` = round(mean(Size_MB, na.rm = TRUE), 1),
+  `% Has Website` = round(mean(!is.na(Developer_Website) & Developer_Website != "") * 100, 0),
+  `% Has Privacy Policy` = round(mean(!is.na(Privacy_Policy) & Privacy_Policy != "") * 100, 0),
+  `% With IAP` = round(mean(In_App_Purchases, na.rm = TRUE) * 100, 1),
+  `% With Ads` = round(mean(Ad_Supported, na.rm = TRUE) * 100, 1),
+  `Avg Rating` = round(mean(Rating, na.rm = TRUE), 2)
+), by = Editors_Choice]
+
+# Add Type label
+ec_stats[, Type := ifelse(Editors_Choice == TRUE, "Editor's Choice", "Regular Apps")]
+
+# Reshape to long format for plotting
+ec_long <- melt(ec_stats, 
+                id.vars = c("Editors_Choice", "Type"),
+                variable.name = "Metric",
+                value.name = "Value")
+
+# Plot
+ggplot(ec_long, aes(x = Type, y = Value, fill = Type)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = round(Value, 1)), vjust = -0.3, size = 3) +
+  scale_fill_manual(values = c("Editor's Choice" = "#FFD700", "Regular Apps" = "steelblue"), 
+                    guide = "none") +
+  facet_wrap(~Metric, scales = "free_y", ncol = 6) +
+  labs(title = "What Makes an Editor's Choice App?",
+       subtitle = "EC apps are 4x larger, have professional presence, and heavily monetize with IAP",
+       x = "", y = "") +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(face = "bold"))
+```
+What it takes for Editor's Choice
+Editor's Choice apps differ markedly from regular apps across several dimensions. They tend to be significantly larger in size, averaging 83.1 MB compared to 19.2 MB for regular apps, suggesting more complex functionality or richer content. Additionally, EC apps almost universally maintain a professional online presence, with 98% having dedicated websites and 100% providing privacy policies, indicating a higher level of trustworthiness and compliance. Furthermore, EC apps are more likely to employ monetization strategies, with 75.9% incorporating in-app purchases and 66.3% being ad-supported, compared to much lower rates among regular apps. Finally, EC apps also enjoy higher average ratings (4.33 vs. 4.10), reflecting better user satisfaction. These factors collectively highlight the elevated standards and strategic approaches that contribute to an app being selected as Editor's Choice.
+
+# Predictive Modeling
+
+
+## Define High Performer (1M+ installs) and inspect imbalance
+```{r high_performer_definition}
+# Make sure scales is available for pretty numbers
+if (!requireNamespace("scales", quietly = TRUE)) {
+  install.packages("scales")
+}
+library(scales)
+
+# Define high performer threshold = 1M+ installs
+threshold <- 1000000
+
+df_clean[, high_performer := ifelse(Maximum_Installs >= threshold, 1, 0)]
+
+cat("High Performer Threshold:", scales::comma(threshold), "installs\n\n")
+cat("Class Distribution (counts):\n")
+print(table(df_clean$high_performer))
+cat("\nClass Distribution (%):\n")
+print(round(prop.table(table(df_clean$high_performer)) * 100, 2))
+```
+
+## Visualize target imbalance
+```{r high_performer_imbalance_plot, fig.width=7, fig.height=5}
+class_dist <- data.frame(
+  Class = c("Regular (<1M)", "High Performer (1M+)"),
+  Count = as.numeric(table(df_clean$high_performer))
+)
+class_dist$Pct <- class_dist$Count / sum(class_dist$Count) * 100
+
+ggplot(class_dist, aes(x = Class, y = Count, fill = Class)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = paste0(scales::comma(Count), "\n(", round(Pct, 1), "%)")),
+            vjust = -0.2, size = 4) +
+  scale_fill_manual(values = c("gray60", "#27AE60"), guide = "none") +
+  scale_y_continuous(labels = scales::comma,
+                     limits = c(0, max(class_dist$Count) * 1.15)) +
+  labs(
+    title = "Target Variable Distribution",
+    subtitle = "High Performer = 1M+ installs (class imbalance)",
+    x = "",
+    y = "Number of Apps"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+The vast majority of apps (over 98%) do not reach the high performer threshold of 1 million installs.
+
+## Feature Engineering
+```{r feature_engineering}
+# We use features that are either known or largely controllable:
+# - Size_MB (after parsing)
+# - Price, Free, Ads, IAP
+# - Category and Content_Rating (grouped)
+# - app_age_days, days_since_update
+
+df_model <- df_clean[!is.na(Size_MB) & !is.na(days_since_update), .(
+  high_performer,
+  Size_MB,
+  Price,
+  Free          = as.integer(Free),
+  Ads           = as.integer(Ad_Supported),
+  IAP           = as.integer(In_App_Purchases),
+  Category,
+  Content_Rating,
+  app_age_days,
+  days_since_update
+)]
+
+# Drop any remaining NAs
+df_model <- na.omit(df_model)
+cat("Model dataset size:", nrow(df_model), "apps\n")
+```
+
+## Group categories (top 15 + 'Other') and simplify content ratings
+```{r feature_engineering_groups}
+# Top 15 categories by count
+top_categories <- df_model[, .N, by = Category][order(-N)][1:15, Category]
+
+df_model[, Category_Group := ifelse(Category %in% top_categories, Category, "Other")]
+df_model[, Category_Group := as.factor(Category_Group)]
+
+# Simplify content rating into broader audience buckets
+df_model[, Content_Simple := data.table::fcase(
+  Content_Rating == "Everyone",                        "Everyone",
+  Content_Rating == "Teen",                            "Teen",
+  Content_Rating %in% c("Mature 17+", "Adults only 18+"), "Mature",
+  default = "Other"
+)]
+df_model[, Content_Simple := as.factor(Content_Simple)]
+
+cat("Category groups:\n")
+print(table(df_model$Category_Group))
+cat("\nSimplified content ratings:\n")
+print(table(df_model$Content_Simple))
+```
+For the classification model, we focus on features that the client can influence** before or shortly after launch: size, price, free vs paid, ads, in-app purchases, category, content rating, and update recency.To avoid overfitting and to keep the model interpretable, we: collapse categories into the top 15 categories plus an “Other” group, simplify content ratings into Everyone, Teen, Mature, and Other. This creates a clean modeling dataset that balances statistical power with interpretability for business decisions.
+
+## 3. Train/Test Split (70/30)
+```{r train_test_split}
+set.seed(123)
+
+n <- nrow(df_model)
+train_idx <- sample(1:n, size = 0.7 * n)
+
+train <- df_model[train_idx]
+test  <- df_model[-train_idx]
+
+cat("Training set size:", nrow(train), "\n")
+cat("Test set size:", nrow(test), "\n\n")
+
+cat("Training class distribution (%):\n")
+print(round(prop.table(table(train$high_performer)) * 100, 2))
+cat("\nTest class distribution (%):\n")
+print(round(prop.table(table(test$high_performer)) * 100, 2))
+```
+We split the data into a 70% training set and 30% test set. The class distribution (high performers vs regular apps) is similar in both sets, which helps ensure that performance estimates on the test set are reliable. The training set is used to fit the model, while the test set is held out to evaluate how well the model generalizes to unseen apps.
+
+
+## Fit Logistic Regression and Evaluate Performance
+
+```{r logistic_regression_fit}
+logit_model <- glm(
+  high_performer ~ Size_MB + Price + Free + Ads + IAP +
+    Category_Group + Content_Simple +
+    app_age_days + days_since_update,
+  data   = train,
+  family = binomial
+)
+
+summary(logit_model)
+```
+
+```{r logistic_regression_eval}
+# Predicted probabilities and classes
+test$pred_prob  <- predict(logit_model, newdata = test, type = "response")
+test$pred_class <- ifelse(test$pred_prob > 0.5, 1, 0)
+
+# Confusion matrix
+conf_matrix <- table(
+  Predicted = test$pred_class,
+  Actual    = test$high_performer
+)
+print(conf_matrix)
+
+# Derive metrics
+TP <- conf_matrix["1", "1"]
+TN <- conf_matrix["0", "0"]
+FP <- conf_matrix["1", "0"]
+FN <- conf_matrix["0", "1"]
+
+accuracy    <- (TP + TN) / sum(conf_matrix)
+precision   <- TP / (TP + FP)
+recall      <- TP / (TP + FN)                # sensitivity
+specificity <- TN / (TN + FP)
+f1_score    <- 2 * precision * recall / (precision + recall)
+
+metrics <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall (Sensitivity)", "Specificity", "F1 Score"),
+  Value  = round(c(accuracy, precision, recall, specificity, f1_score) * 100, 2)
+)
+
+knitr::kable(metrics, caption = "Logistic Regression Performance on Test Set")
+```
+
+## Confusion Matrix Heatmap
+```{r confusion_heatmap, fig.width=7, fig.height=5}
+conf_df <- as.data.frame(conf_matrix)
+conf_df$Predicted <- factor(conf_df$Predicted, levels = c(1, 0))
+conf_df$Actual    <- factor(conf_df$Actual, levels = c(0, 1))
+
+ggplot(conf_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = scales::comma(Freq)), size = 5, color = "white") +
+  scale_fill_gradient(low = "steelblue", high = "#27AE60") +
+  scale_x_discrete(labels = c("Regular (<1M)", "High Performer (1M+)")) +
+  scale_y_discrete(labels = c("High Performer", "Regular")) +
+  labs(
+    title = "Confusion Matrix: High Performer vs Regular Apps",
+    subtitle = paste0(
+      "Accuracy: ", round(accuracy * 100, 1), "% | ",
+      "Precision: ", round(precision * 100, 1), "% | ",
+      "Recall: ", round(recall * 100, 1), "%"
+    ),
+    x = "Actual Class",
+    y = "Predicted Class"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+Interpretation
+The logistic regression model demonstrates solid performance in predicting high-performing apps, achieving an accuracy of approximately 98%. The precision of around 44% indicates that when the model predicts an app will be a high performer, it is correct 44% of the time. The recall (sensitivity) of about 6.9% suggests that the model identifies only 7% of all actual high performers. The specificity of over 97% shows that the model is very effective at correctly identifying regular apps. Overall, these metrics indicate that the model is a useful tool for forecasting app success based on controllable features. This lack of sensitivity is a large reason why we did not use this analysis in our recommendations and presentation, but it is worth mentioning. 
+Note: app_age_days may introduce mild endogeneity — older apps have had more time to accumulate installs. The core monetization insights (Free, Ads, IAP) remain the most actionable findings.
+
+## Odds Ratios for Actionable Steps
+```{r odds_ratios_core}
+feature_importance <- data.frame(
+  Feature     = names(coef(logit_model))[-1],  # drop intercept
+  Coefficient = coef(logit_model)[-1]
+)
+feature_importance$Odds_Ratio <- exp(feature_importance$Coefficient)
+feature_importance$Pct_Change <- (feature_importance$Odds_Ratio - 1) * 100
+
+# Focus on core controllable features
+core_features <- feature_importance[
+  feature_importance$Feature %in% c(
+    "Free", "Ads", "IAP", "Price", "Size_MB",
+    "app_age_days", "days_since_update"
+  ),
+]
+
+core_features$Odds_Ratio <- round(core_features$Odds_Ratio, 2)
+core_features$Pct_Change <- round(core_features$Pct_Change, 1)
+
+core_features <- core_features[order(-abs(core_features$Coefficient)), ]
+
+knitr::kable(
+  core_features,
+  caption = "Effect of Key Pre-Launch Levers on Odds of Becoming a High Performer (1M+ installs)"
+)
+```
+
+Interpretation of Odds Ratios
+The odds ratios quantify how each pre-launch decision affects an app’s likelihood of reaching 1M+ installs, holding all other factors constant. Values above 1 increase the odds of breakout success, while values below 1 decrease it.
+The most influential levers are monetization choices:
+Free apps have an odds ratio of 5.98, meaning they are nearly six times more likely to become high performers than paid apps. Removing the upfront price dramatically lowers friction and expands the potential user base.
+In-app purchases (IAP) increase the odds of success by 4x, suggesting that top apps monetize through ongoing engagement rather than one-time payments.
+Ad-supported apps are 3.29 times more likely to reach 1M+ installs (OR = 3.29), reinforcing that scalable apps rely on volume-based monetization models.
+Price has an odds ratio of 0.78, indicating that each additional dollar decreases the odds of hitting 1M installs by roughly 22%. Paid access is a meaningful barrier to growth.
+
+## Probability Distributions
+```{r prob_distribution_plot, fig.width=8, fig.height=5}
+ggplot(test, aes(x = pred_prob, fill = as.factor(high_performer))) +
+  geom_density(alpha = 0.6) +
+  scale_fill_manual(
+    values = c("gray60", "#27AE60"),
+    labels = c("Regular Apps (<1M)", "High Performers (1M+)"),
+    name   = "Actual Class"
+  ) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "red") +
+  labs(
+    title    = "Predicted Probabilities for High Performer Status",
+    subtitle = "Model separates the two groups, but distributions still overlap",
+    x = "Predicted Probability of Being a High Performer",
+    y = "Density"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+Interpretation of Probability Distributions
+This plot shows how the logistic regression model assigns predicted probabilities of reaching 1M+ installs for regular apps  and high performers. While the distributions overlap, indicating that the model cannot perfectly distinguish the two groups, there is a clear shift in the right direction: high-performing apps tend to receive higher predicted probabilities than regular apps.
+
+Most regular apps cluster near zero probability, meaning the model correctly identifies that the majority of apps are unlikely to go viral. High performers, though rare, exhibit a noticeably higher density of predictions to the right of this cluster, confirming that the model captures real structural differences between the two classes.
+
+## ROC Curve
+```{r roc_curve, fig.width=7, fig.height=5}
+library(pROC)
+
+roc_obj <- roc(test$high_performer, test$pred_prob)
+auc_val <- auc(roc_obj)
+
+ggroc(roc_obj, color = "#E74C3C", size = 1.2) +
+  geom_abline(slope = 1, intercept = 1, linetype = "dashed", color = "gray") +
+  annotate("text", x = 0.3, y = 0.3, 
+           label = paste0("AUC = ", round(auc_val, 3)), size = 5) +
+  labs(title = "ROC Curve: High Performer Classification",
+       x = "Specificity", y = "Sensitivity") +
+  theme_minimal()
+```
+
+The ROC curve demonstrates excellent discriminative ability (AUC = 0.905), meaning the model reliably distinguishes high-performing apps from regular apps based on pre-launch characteristics. This validates that the controllable factors identified — particularly monetization strategy (Free, Ads, IAP) — are genuinely associated with breakout success, not statistical artifacts. While low recall (6.9%) reflects the inherent difficulty of predicting rare events, the high AUC confirms the strategic recommendations derived from odds ratios are well-founded.
+
+# Recommendations for our Client
+1. Launch free to accelerate growth. Free apps consistently outperform paid apps across all install tiers, removing barriers to adoption and enabling rapid-user base expansion. 
+2. Monetize through IAP and Ads. In-app purchases and ads deliver the strongest install and revenue impact once scale is achieved, making them more effective than charging upfront.
+3. Optimize App foundations and size. Keep the app to a moderate size (50-100 mb), not below 20 mb, and not above 150 mb. Update every 30-45 days to keep longevity, but do not prioritize this aspect for ratings.
+We believe that the best course of action is to launch free, then monetize later. This model delivers the highest probability of success in terms of installs and user growth, which are the most critical factors for a new app. Once a solid user base is established, the app can then introduce in-app purchases and ads to generate revenue without significantly hindering adoption. 
+4. Maintain a professional digital footprint. Create a dedicated website and privacy policy to enhance credibility and trustworthiness, which are important for both users and platform curation, and are important factors in being considered for Editor's Choice status.
+
+With these aspects in place, the app will have the best chance to be considered for the Editor's Choice list, something that will heavily improve the likelihood of continued success in the long-term. However, it is important to note that there is no replacement for a well-made app that functions as it should and provides a great user experience. Balancing quality with these clear factors is the best course of action. 
+
+# Limitations
+Observational Data
+The dataset describes existing market outcomes, not controlled experiments. Thus, we infer associations—not causal guarantees.
+
+Data Timing
+App dynamics evolve rapidly—business models that are winning today may shift with regulation, user privacy expectations, and ad ecosystem changes.
+
+App Quality Is Multifaceted
+We approximate quality using observable objective factors (size, rating, update recency, install counts). True UX depth, brand power, and marketing spend are not directly observed.
+
+# Conclusion
+Success on the Google Play Store is neither random nor purely creative—it is strategic, measurable, and reproducible. Our analysis reveals that breakout apps share a common blueprint: free access for zero friction, recurring monetization, credibility, rich content, and ongoing investment in updates.
+
+#AI Log
+Links:
+https://claude.ai/share/f6324b70-130c-4d41-b9dd-d4d76ec2ef78
+https://chatgpt.com/share/6930d9c8-2c20-8005-9daf-be0d68f7b496
