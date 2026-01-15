@@ -1,0 +1,730 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html><head></head><body>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="container-fluid main-container">
+
+
+
+
+<div>
+
+
+
+<h1 class="title toc-ignore">MKT 566 - Homework 4: Predicting Yelp
+Review Ratings</h1>
+<h4 class="author">Dhruvika Joshi</h4>
+<h4 class="date">2025-11-20</h4>
+
+</div>
+
+
+<div class="section level1">
+<h1>Executive Summary</h1>
+<p>The goal of this project was to build a machine learning model
+capable of predicting Yelp review sentiment (positive vs.&#160;negative)
+based on review text and user/business metadata.<br/>
+Using a dataset of 95,000 Yelp reviews, we performed text preprocessing,
+feature engineering, exploratory data analysis, and trained multiple
+classification models including Logistic Regression, Random Forest, and
+Gradient Boosting (GBM).</p>
+<p>Among all models, <strong>Gradient Boosting achieved the strongest
+performance</strong>, based on ROC curve analysis.<br/>
+Finally, we generated predictions for the held-out test dataset as part
+of the bonus component.</p>
+<hr/>
+</div>
+<div class="section level1">
+<h1>1. Data Overview</h1>
+<p>The training dataset contains <strong>95,000 Yelp reviews</strong>,
+each including:</p>
+<ul>
+<li>Raw review text<br/>
+</li>
+<li>Star rating (1–5)<br/>
+</li>
+<li>Useful, funny, and cool votes<br/>
+</li>
+<li>User review count and user average stars<br/>
+</li>
+<li>Business review count and business stars<br/>
+</li>
+<li>Review date</li>
+</ul>
+<p>We converted the star ratings into a <strong>binary target</strong>
+for sentiment classification:</p>
+<ul>
+<li><strong>Positive (1)</strong> = reviews with <strong>4–5
+stars</strong><br/>
+</li>
+<li><strong>Negative (0)</strong> = reviews with <strong>1–2
+stars</strong><br/>
+</li>
+<li><strong>3-star reviews were excluded</strong> to maintain
+classification clarity.</li>
+</ul>
+<hr/>
+</div>
+<div class="section level1">
+<h1>2. Text Preprocessing &amp; Feature Engineering</h1>
+<p>Several cleaning steps were applied to the raw text:</p>
+<ul>
+<li>Removed URLs, emails, punctuation, numbers, and extra spaces<br/>
+</li>
+<li>Converted text to lowercase</li>
+</ul>
+<p>We engineered <strong>over 40 predictive features</strong>,
+including:</p>
+<div class="section level3">
+<h3><strong>Text-based Features</strong></h3>
+<ul>
+<li>Review length<br/>
+</li>
+<li>Word count<br/>
+</li>
+<li>Average word length<br/>
+</li>
+<li>Number of exclamation marks and question marks<br/>
+</li>
+<li>Positive and negative word counts<br/>
+</li>
+<li>Sentiment ratio (positive words / negative words)<br/>
+</li>
+<li>First-person word frequency<br/>
+</li>
+<li>Uppercase letter ratio</li>
+</ul>
+</div>
+<div class="section level3">
+<h3><strong>User and Business Features</strong></h3>
+<ul>
+<li>Total user review count<br/>
+</li>
+<li>User average stars<br/>
+</li>
+<li>User fan count<br/>
+</li>
+<li>Business review count<br/>
+</li>
+<li>Business star rating<br/>
+</li>
+<li>User and business “deviation from average” scores</li>
+</ul>
+</div>
+<div class="section level3">
+<h3><strong>Time-Based Features</strong></h3>
+<ul>
+<li>Month, day of week, season<br/>
+</li>
+<li>Days since earliest review</li>
+</ul>
+<p>These features allowed models to capture both text sentiment and
+reviewer/business behavior.</p>
+<hr/>
+</div>
+</div>
+<div class="section level1">
+<h1>3. Exploratory Visualizations (Described)</h1>
+<p>Because HTML automatically displays charts during execution, the
+following descriptions summarize the insights from those plots:</p>
+<div class="section level3">
+<h3><strong>3.1 Target Distribution</strong></h3>
+<p>A bar chart showing the proportion of positive and negative
+reviews.<br/>
+Result: The dataset contains <strong>more positive reviews</strong> than
+negative ones.</p>
+</div>
+<div class="section level3">
+<h3><strong>3.2 Review Length by Star Rating</strong></h3>
+<p>A boxplot illustrating review length across star levels.<br/>
+Insight: Higher-star reviews tend to be slightly longer, though all
+classes show large spread.</p>
+</div>
+<div class="section level3">
+<h3><strong>3.3 Review Length Distribution by Sentiment</strong></h3>
+<p>A histogram comparing the review lengths of positive and negative
+reviews.<br/>
+Insight: Positive reviews cluster more toward medium-length, while
+negative reviews show a wider variance.</p>
+</div>
+<div class="section level3">
+<h3><strong>3.4 Sentiment Ratio vs Star Rating</strong></h3>
+<p>A boxplot showing the ratio of positive to negative words across star
+ratings.<br/>
+Insight: Higher star ratings correspond to significantly higher
+sentiment ratios.</p>
+</div>
+<div class="section level3">
+<h3><strong>3.5 Feature Correlation Heatmap</strong></h3>
+<p>A heatmap visualizing correlations among the top predictive
+features.<br/>
+Key Observations: - User and business rating features are strongly
+correlated<br/>
+- Text sentiment measures correlate meaningfully with the target<br/>
+- Minimal multicollinearity among engineered text features</p>
+<hr/>
+</div>
+</div>
+<div class="section level1">
+<h1>4. Model Training &amp; Evaluation</h1>
+<p>We trained three machine learning models:</p>
+<ol style="list-style-type: decimal;">
+<li><strong>Logistic Regression</strong><br/>
+</li>
+<li><strong>Random Forest</strong><br/>
+</li>
+<li><strong>Gradient Boosting Machine (GBM)</strong></li>
+</ol>
+<div class="section level3">
+<h3><strong>Performance Summary (from ROC curves)</strong></h3>
+<ul>
+<li><strong>GBM performed best</strong>, showing the highest sensitivity
+across nearly all false positive rates.<br/>
+</li>
+<li>Random Forest demonstrated strong performance but slightly lower
+than GBM.<br/>
+</li>
+<li>Logistic Regression performed reasonably but lacked nonlinear
+modeling power.</li>
+</ul>
+<p>The combined ROC curve (displayed in HTML output) visually confirmed
+this ranking.</p>
+<hr/>
+</div>
+</div>
+<div class="section level1">
+<h1>5. Feature Importance Findings</h1>
+<p>Using the Random Forest model, we extracted the top 20 most important
+predictors.</p>
+<div class="section level3">
+<h3><strong>Top predictors included:</strong></h3>
+<ol style="list-style-type: decimal;">
+<li>Business star deviation<br/>
+</li>
+<li>User star deviation<br/>
+</li>
+<li>User average stars<br/>
+</li>
+<li>Sentiment ratio<br/>
+</li>
+<li>Positive and negative word counts<br/>
+</li>
+<li>Business review count<br/>
+</li>
+<li>Review length<br/>
+</li>
+<li>First-person word count</li>
+</ol>
+<p>These results show that both <strong>text sentiment and
+reviewer/business metadata</strong> play meaningful roles in predicting
+review sentiment.</p>
+<hr/>
+</div>
+</div>
+<div class="section level1">
+<h1>6. Bonus: Test Set Predictions</h1>
+<p>We applied the trained Gradient Boosting model to the provided test
+dataset and produced:</p>
+<p>&#128196; <strong>HW4_predictions.csv</strong></p>
+<p>This CSV includes:</p>
+<ul>
+<li><code>review_id</code><br/>
+</li>
+<li><code>predicted_probability</code> (likelihood the review is
+positive)</li>
+</ul>
+<p>This fulfills the bonus requirement.</p>
+<hr/>
+</div>
+<div class="section level1">
+<h1>7. Learning Reflection</h1>
+<p>This assignment helped develop practical skills in:</p>
+<ul>
+<li>Text preprocessing and cleaning<br/>
+</li>
+<li>Creating engineered features from unstructured text<br/>
+</li>
+<li>Using <code>dplyr</code>, <code>stringr</code>, and
+<code>lubridate</code> for data manipulation<br/>
+</li>
+<li>Training and evaluating multiple machine-learning models<br/>
+</li>
+<li>Understanding ROC curves, AUC, and feature importance<br/>
+</li>
+<li>Creating high-quality exploratory visualizations<br/>
+</li>
+<li>Debugging long R scripts and working with large datasets</li>
+</ul>
+<p>Overall, this project significantly improved my ability to combine
+quantitative text analysis with machine learning modeling.</p>
+<hr/>
+</div>
+<div class="section level1">
+<h1>—- Setup ————————————————</h1>
+</div>
+<div class="section level1">
+<h1>If needed ONCE (not every run), install packages:</h1>
+</div>
+<div class="section level1">
+<h1>install.packages(c(“jsonlite”,“tidyverse”,“caret”,“pROC”,</h1>
+</div>
+<div class="section level1">
+<h1>“randomForest”,“gbm”,“lubridate”))</h1>
+<p>library(jsonlite) library(tidyverse) library(caret) library(pROC)
+library(randomForest) library(gbm) library(lubridate)</p>
+<p>set.seed(42)</p>
+<p>setwd(“~/Downloads/HW 4”) cat(“Working directory:”, getwd(), “”)
+print(list.files())</p>
+</div>
+<div class="section level1">
+<h1>—- Helper functions ————————————-</h1>
+<p>load_jsonl &lt;- function(file_path) { lines &lt;-
+readLines(file_path, warn = FALSE) parsed &lt;- lapply(seq_along(lines),
+function(i) { line &lt;- lines[[i]] tryCatch( fromJSON(line, flatten =
+TRUE), error = function(e) { warning(sprintf(“Skipping malformed line %d
+in %s: %s”, i, file_path, e$message)) NULL } ) }) parsed &lt;-
+Filter(Negate(is.null), parsed) df &lt;- bind_rows(parsed)
+cat(sprintf(“✓ Loaded %d records from %s”, nrow(df), file_path)) df
+}</p>
+<p>clean_text &lt;- function(text) { if (is.na(text) || text == ““)
+return(”“) text &lt;- tolower(text) # remove URLs text &lt;-
+gsub(”http[<a rel="noopener" href="#fn1" class="footnote-ref"><sup>1</sup></a>]+|www[<a rel="noopener" href="#fn2" class="footnote-ref"><sup>2</sup></a>]+“,”“, text) # remove emails text &lt;-
+gsub(”[<a rel="noopener" href="#fn3" class="footnote-ref"><sup>3</sup></a>]+@[<a rel="noopener" href="#fn4" class="footnote-ref"><sup>4</sup></a>]+“,”“, text) # keep only alnum + space +
+basic punctuation text &lt;- gsub(”[^a-z0-9[:space:].,!?]“,”“, text) #
+collapse multiple spaces text &lt;- gsub(”[[:space:]]+“,” “,
+trimws(text)) text }</p>
+<p>positive_words &lt;-
+c(“good”,“great”,“excellent”,“amazing”,“awesome”,
+“love”,“best”,“wonderful”,“fantastic”,“perfect”) negative_words &lt;-
+c(“bad”,“terrible”,“horrible”,“awful”,“worst”,
+“hate”,“disappointing”,“poor”,“disgusting”,“never”)</p>
+</div>
+<div class="section level1">
+<h1>—- Load training data ———————————–</h1>
+<p>train_df &lt;- load_jsonl(“train.jsonl”)</p>
+<p>required_cols &lt;- c( “review_id”, “text”, “stars”, “date”,
+“useful”, “funny”, “cool”, “user_id”, “user_review_count”,
+“user_average_stars”, “user_fans”, “business_id”, “business_name”,
+“business_city”, “business_state”, “business_stars”,
+“business_review_count” )</p>
+<p>missing_cols &lt;- setdiff(required_cols, names(train_df)) if
+(length(missing_cols) &gt; 0) { stop(“Missing required columns in
+train.jsonl:”, paste(missing_cols, collapse = “,”)) } else { cat(“✓ All
+required columns present in training data”) }</p>
+<p>df &lt;- train_df</p>
+</div>
+<div class="section level1">
+<h1>—- Basic preprocessing ———————————-</h1>
+</div>
+<div class="section level1">
+<h1>numeric casting (these are allowed in data; we just won’t use avg
+stars as features)</h1>
+<p>numeric_cols_expected &lt;- c( “stars”, “useful”, “funny”, “cool”,
+“user_review_count”, “user_average_stars”, “user_fans”,
+“business_stars”, “business_review_count” ) for (col in
+numeric_cols_expected) { if (col %in% names(df)) df[[col]] &lt;-
+as.numeric(df[[col]]) }</p>
+</div>
+<div class="section level1">
+<h1>fill numeric NAs</h1>
+<p>numeric_cols &lt;- names(df)[sapply(df, is.numeric)] for (col in
+numeric_cols) { if (anyNA(df[[col]])) { med &lt;- median(df[[col]],
+na.rm = TRUE) df[[col]][is.na(df[[col]])] &lt;- med } }</p>
+</div>
+<div class="section level1">
+<h1>fill text NAs</h1>
+<p>text_cols &lt;- c(“text”, “business_name”, “business_city”,
+“business_state”) for (col in text_cols) { if (col %in% names(df))
+df[[col]][is.na(df[[col]])] &lt;- “” }</p>
+</div>
+<div class="section level1">
+<h1>binary target</h1>
+<p>df &lt;- df %&gt;% mutate(target = factor(ifelse(stars &gt; 3,
+“positive”, “negative”), levels = c(“negative”, “positive”)))</p>
+<p>cat(“Target distribution:”) print(table(df$target))</p>
+</div>
+<div class="section level1">
+<h1>—- Text cleaning &amp; basic features ———————-</h1>
+<p>df &lt;- df %&gt;% mutate( text_clean = vapply(text, clean_text,
+FUN.VALUE = character(1)), date_parsed = ymd(date), year =
+year(date_parsed), month = month(date_parsed), day_of_week =
+wday(date_parsed), review_length = nchar(text_clean), word_count =
+str_count(text_clean, “[<a rel="noopener" href="#fn5" class="footnote-ref"><sup>5</sup></a>]+”), avg_word_length = ifelse(word_count
+&gt; 0, review_length / word_count, 0), exclamation_count =
+str_count(text, “!”), question_count = str_count(text, “[?]”) )</p>
+</div>
+<div class="section level1">
+<h1>store training start date for use on test set later</h1>
+<p>train_start_date &lt;- min(df$date_parsed, na.rm = TRUE)</p>
+</div>
+<div class="section level1">
+<h1>—- Text &amp; metadata features (no leakage) —————-</h1>
+<p>df &lt;- df %&gt;% mutate( positive_word_count =
+str_count(text_clean, paste(positive_words, collapse = “|”)),
+negative_word_count = str_count(text_clean, paste(negative_words,
+collapse = “|”)), sentiment_ratio = (positive_word_count + 1) /
+(negative_word_count + 1), first_person_count = str_count(text_clean,
+“\b(i|me|my|mine|we|us|our)\b”), sentence_count = str_count(text,
+“[.!?]+”), avg_sentence_length = word_count / pmax(sentence_count, 1),
+uppercase_ratio = str_count(text, “[A-Z]”) / pmax(nchar(text), 1),
+user_engagement = useful + funny + cool, user_experience_level =
+case_when( user_review_count &lt; 10 ~ “novice”, user_review_count &lt;
+50 ~ “intermediate”, user_review_count &lt; 200 ~ “experienced”, TRUE ~
+“expert” ), business_popularity = case_when( business_review_count &lt;
+50 ~ “low”, business_review_count &lt; 200 ~ “medium”,
+business_review_count &lt; 500 ~ “high”, TRUE ~ “very_high” ),
+days_since_earliest = as.numeric(difftime(date_parsed, train_start_date,
+units = “days”)), is_weekend = ifelse(day_of_week %in% c(1, 7), 1, 0),
+season = case_when( month %in% c(12,1,2) ~ “winter”, month %in% c(3,4,5)
+~ “spring”, month %in% c(6,7,8) ~ “summer”, TRUE ~ “fall” ), # safe log
+features log_user_review_count = log1p(user_review_count),
+log_business_review_count = log1p(business_review_count), log_user_fans
+= log1p(user_fans) )</p>
+<p>saveRDS(df, “df_with_features.rds”) cat(“✓ Saved
+df_with_features.rds”)</p>
+</div>
+<div class="section level1">
+<h1>—- Quick visuals (to see plots) ————————</h1>
+<p>ggplot(df, aes(x = target, fill = target)) + geom_bar() + labs(title
+= “Target distribution”, x = “Sentiment”, y = “Count”)</p>
+<p>ggplot(df, aes(x = stars, y = review_length)) +
+geom_boxplot(aes(group = stars)) + labs(title = “Review length by star
+rating”)</p>
+</div>
+<div class="section level1">
+<h1>—- Prepare for modeling ——————————–</h1>
+<p>df &lt;- readRDS(“df_with_features.rds”)</p>
+<p>df &lt;- df %&gt;% mutate( user_experience_numeric = case_when(
+user_experience_level == “novice” ~ 1, user_experience_level ==
+“intermediate” ~ 2, user_experience_level == “experienced” ~ 3, TRUE ~ 4
+), business_popularity_numeric = case_when( business_popularity == “low”
+~ 1, business_popularity == “medium” ~ 2, business_popularity == “high”
+~ 3, TRUE ~ 4 ), season_numeric = case_when( season == “winter” ~ 1,
+season == “spring” ~ 2, season == “summer” ~ 3, season == “fall” ~ 4 )
+)</p>
+</div>
+<div class="section level1">
+<h1>IMPORTANT: feature set WITHOUT avg user rating / business stars /
+deviations</h1>
+<p>feature_cols &lt;- c( “review_length”,“word_count”,“avg_word_length”,
+“positive_word_count”,“negative_word_count”,“sentiment_ratio”,
+“first_person_count”,“exclamation_count”,“question_count”,
+“sentence_count”,“avg_sentence_length”,“uppercase_ratio”,
+“user_review_count”,“user_fans”,“user_engagement”,
+“user_experience_numeric”,
+“business_review_count”,“business_popularity_numeric”,
+“year”,“month”,“day_of_week”,“is_weekend”,“season_numeric”,
+“days_since_earliest”, “useful”,“funny”,“cool”,
+“log_user_review_count”,“log_business_review_count”,“log_user_fans”
+)</p>
+<p>X &lt;- df[, feature_cols] y &lt;- df$target X[is.na(X)] &lt;- 0</p>
+<p>set.seed(42) train_index &lt;- createDataPartition(y, p = 0.8, list =
+FALSE) X_train &lt;- X[train_index, ] X_test &lt;- X[-train_index, ]
+y_train &lt;- y[train_index] y_test &lt;- y[-train_index]</p>
+<p>train_control &lt;- trainControl( method = “cv”, number = 5,
+classProbs = TRUE, summaryFunction = twoClassSummary )</p>
+</div>
+<div class="section level1">
+<h1>—- Model 1: Logistic Regression ————————</h1>
+<p>logit_model &lt;- train( X_train, y_train, method = “glm”, family =
+“binomial”, trControl = train_control, metric = “ROC” )</p>
+<p>logit_prob &lt;- predict(logit_model, X_test, type = “prob”)
+logit_pred &lt;- predict(logit_model, X_test) logit_auc &lt;-
+auc(roc(y_test, logit_prob$positive)) cat(“Logistic Regression AUC:”,
+logit_auc, “”)</p>
+</div>
+<div class="section level1">
+<h1>—- Model 2: Random Forest ——————————</h1>
+<p>rf_model &lt;- train( X_train, y_train, method = “rf”, trControl =
+train_control, tuneGrid = expand.grid(mtry = c(5,10,15)), ntree = 100,
+metric = “ROC” )</p>
+<p>rf_prob &lt;- predict(rf_model, X_test, type = “prob”) rf_pred &lt;-
+predict(rf_model, X_test) rf_auc &lt;- auc(roc(y_test,
+rf_prob$positive)) cat(“Random Forest AUC:”, rf_auc, “”)</p>
+</div>
+<div class="section level1">
+<h1>—- Model 3: Gradient Boosting ————————–</h1>
+<p>gbm_grid &lt;- expand.grid( n.trees = c(50, 100), interaction.depth =
+c(3, 5), shrinkage = 0.1, n.minobsinnode = 10 )</p>
+<p>gbm_model &lt;- train( X_train, y_train, method = “gbm”, trControl =
+train_control, tuneGrid = gbm_grid, metric = “ROC”, verbose = FALSE
+)</p>
+<p>gbm_prob &lt;- predict(gbm_model, X_test, type = “prob”) gbm_pred
+&lt;- predict(gbm_model, X_test) gbm_auc &lt;- auc(roc(y_test,
+gbm_prob$positive)) cat(“Gradient Boosting AUC:”, gbm_auc, “”)</p>
+</div>
+<div class="section level1">
+<h1>—- Compare models ————————————–</h1>
+<p>results_df &lt;- data.frame( Model = c(“Logistic Regression”, “Random
+Forest”, “Gradient Boosting”), AUC = c(logit_auc, rf_auc, gbm_auc) )
+print(results_df)</p>
+<p>save( X_train, X_test, y_train, y_test, logit_model, rf_model,
+gbm_model, results_df, feature_cols, file = “all_models.RData” )</p>
+</div>
+<div class="section level1">
+<h1>—- Advanced Visualizations ———————————</h1>
+<div class="section level2">
+<h2>1. Review length distribution by sentiment ——————–</h2>
+<p>ggplot(df, aes(x = review_length, fill = target)) +
+geom_histogram(bins = 60, alpha = 0.7, position = “identity”) +
+coord_cartesian(xlim = c(0, quantile(df$review_length, 0.99))) + labs(
+title = “Review Length Distribution by Sentiment”, x = “Review Length
+(characters)”, y = “Count” ) + theme_minimal() +
+scale_fill_brewer(palette = “Set1”)</p>
+</div>
+<div class="section level2">
+<h2>2. Sentiment ratio vs star rating —————————–</h2>
+<p>ggplot(df, aes(x = factor(stars), y = sentiment_ratio, fill =
+factor(stars))) + geom_boxplot(outlier.alpha = 0.2) +
+coord_cartesian(ylim = c(0, quantile(df$sentiment_ratio, 0.99))) + labs(
+title = “Sentiment Ratio by Star Rating”, x = “Star Rating”, y =
+“Sentiment Ratio (positive / negative words + 1)” ) + theme_minimal() +
+scale_fill_brewer(palette = “RdYlGn”)</p>
+</div>
+<div class="section level2">
+<h2>3. ROC curves for all three models —————————-</h2>
+<p>roc_logit &lt;- roc(y_test, logit_prob<span class="math inline">\(positive)
+roc_rf    &lt;- roc(y_test, rf_prob\)</span>positive) roc_gbm &lt;-
+roc(y_test, gbm_prob$positive)</p>
+<p>roc_data &lt;- bind_rows( data.frame( FPR = 1 - roc_logit<span class="math inline">\(specificities,
+    TPR   = roc_logit\)</span>sensitivities, Model = “Logistic
+Regression” ), data.frame( FPR = 1 - roc_rf<span class="math inline">\(specificities,
+    TPR   = roc_rf\)</span>sensitivities, Model = “Random Forest” ),
+data.frame( FPR = 1 - roc_gbm<span class="math inline">\(specificities,
+    TPR   = roc_gbm\)</span>sensitivities, Model = “Gradient Boosting” )
+)</p>
+<p>ggplot(roc_data, aes(x = FPR, y = TPR, color = Model)) +
+geom_line(size = 1.1) + geom_abline(intercept = 0, slope = 1, linetype =
+“dashed”, color = “gray50”) + labs( title = “ROC Curves – Model
+Comparison”, x = “False Positive Rate (1 - Specificity)”, y = “True
+Positive Rate (Sensitivity)” ) + theme_minimal() + theme(legend.position
+= “bottom”)</p>
+</div>
+<div class="section level2">
+<h2>4. Feature importance (Random Forest) ————————-</h2>
+<p>rf_imp &lt;- varImp(rf_model)<span class="math inline">\(importance
+rf_imp\)</span>Feature &lt;- rownames(rf_imp)</p>
+<p>rf_imp_top20 &lt;- rf_imp %&gt;% arrange(desc(Overall)) %&gt;%
+slice(1:20)</p>
+<p>ggplot(rf_imp_top20, aes(x = reorder(Feature, Overall), y = Overall))
++ geom_col() + coord_flip() + labs( title = “Top 20 Most Important
+Features (Random Forest)”, x = “Feature”, y = “Importance (Overall)” ) +
+theme_minimal()</p>
+</div>
+<div class="section level2">
+<h2>5. Correlation heatmap of top features ————————</h2>
+<p>top_feats &lt;- rf_imp_top20$Feature[1:15]</p>
+<p>numeric_top &lt;- df %&gt;% select(all_of(top_feats)) %&gt;%
+mutate(across(everything(), as.numeric))</p>
+<p>corr_mat &lt;- cor(numeric_top, use = “pairwise.complete.obs”)</p>
+<p>corr_df &lt;- as.data.frame(as.table(corr_mat)) names(corr_df) &lt;-
+c(“Var1”, “Var2”, “Correlation”)</p>
+<p>ggplot(corr_df, aes(x = Var1, y = Var2, fill = Correlation)) +
+geom_tile() + scale_fill_gradient2( low = “#d73027”, mid = “white”, high
+= “#1a9850”, midpoint = 0, limits = c(-1, 1) ) + theme_minimal() +
+theme( axis.text.x = element_text(angle = 45, hjust = 1), axis.title.x =
+element_blank(), axis.title.y = element_blank() ) + labs(title =
+“Correlation Heatmap – Top Predictive Features”)</p>
+</div>
+</div>
+<div class="section level1">
+<h1>—- Bonus: Predictions for test set ———————</h1>
+<p>cat(“=== BONUS PREDICTIONS START ===”)</p>
+</div>
+<div class="section level1">
+<h1>1. Load test data</h1>
+<p>test_data &lt;- load_jsonl(“test_no_stars.jsonl”) cat(“Test rows:”,
+nrow(test_data), “”)</p>
+</div>
+<div class="section level1">
+<h1>2. Preprocess test data (same as training, no stars used)</h1>
+<p>test_processed &lt;- test_data %&gt;% mutate( text_clean =
+vapply(text, clean_text, FUN.VALUE = character(1)), date_parsed =
+ymd(date), year = year(date_parsed), month = month(date_parsed),
+day_of_week = wday(date_parsed), review_length = nchar(text_clean),
+word_count = str_count(text_clean, “[<a rel="noopener" href="#fn6" class="footnote-ref"><sup>6</sup></a>]+”), avg_word_length = ifelse(word_count
+&gt; 0, review_length / word_count, 0), exclamation_count =
+str_count(text, “!”), question_count = str_count(text, “[?]”),
+positive_word_count = str_count(text_clean, paste(positive_words,
+collapse = “|”)), negative_word_count = str_count(text_clean,
+paste(negative_words, collapse = “|”)), sentiment_ratio =
+(positive_word_count + 1) / (negative_word_count + 1),
+first_person_count = str_count(text_clean,
+“\b(i|me|my|mine|we|us|our)\b”), sentence_count = str_count(text,
+“[.!?]+”), avg_sentence_length = word_count / pmax(sentence_count, 1),
+uppercase_ratio = str_count(text, “[A-Z]”) / pmax(nchar(text), 1),
+user_engagement = useful + funny + cool, days_since_earliest =
+as.numeric(difftime(date_parsed, min(df$date_parsed), units = “days”)),
+is_weekend = ifelse(day_of_week %in% c(1, 7), 1, 0), season_numeric =
+case_when( month %in% c(12,1,2) ~ 1, month %in% c(3,4,5) ~ 2, month %in%
+c(6,7,8) ~ 3, TRUE ~ 4 ), user_experience_numeric = case_when(
+user_review_count &lt; 10 ~ 1, user_review_count &lt; 50 ~ 2,
+user_review_count &lt; 200 ~ 3, TRUE ~ 4 ), business_popularity_numeric
+= case_when( business_review_count &lt; 50 ~ 1, business_review_count
+&lt; 200 ~ 2, business_review_count &lt; 500 ~ 3, TRUE ~ 4 ),
+log_user_review_count = log1p(user_review_count),
+log_business_review_count = log1p(business_review_count), log_user_fans
+= log1p(user_fans) )</p>
+</div>
+<div class="section level1">
+<h1>3. Add missing columns to match model feature list</h1>
+<p>missing_cols &lt;- setdiff(feature_cols, names(test_processed)) if
+(length(missing_cols) &gt; 0) { cat(“Adding missing columns:”,
+paste(missing_cols, collapse = “,”), “”) for (col in missing_cols) {
+test_processed[[col]] &lt;- 0 } }</p>
+</div>
+<div class="section level1">
+<h1>4. Build prediction matrix</h1>
+<p>X_test_final &lt;- test_processed[, feature_cols, drop = FALSE]
+X_test_final[is.na(X_test_final)] &lt;- 0</p>
+<p>cat(“✓ X_test_final created with dimensions:”,
+paste(dim(X_test_final), collapse = ” x “),”“)</p>
+</div>
+<div class="section level1">
+<h1>5. Predict</h1>
+<p>test_pred_prob &lt;- predict(gbm_model, X_test_final, type =
+“prob”)</p>
+</div>
+<div class="section level1">
+<h1>6. Define pred_df</h1>
+<p>pred_df &lt;- data.frame( review_id = test_processed<span class="math inline">\(review_id,
+  predicted_probability = test_pred_prob\)</span>positive )</p>
+</div>
+<div class="section level1">
+<h1>7. Save CSV</h1>
+<p>write.csv(pred_df, “HW4_predictions.csv”, row.names = FALSE) cat(“✓
+Saved predictions to HW4_predictions.csv”)</p>
+</div>
+<div class="section level1">
+<h1>8. Show preview</h1>
+<p>head(pred_df) summary(pred_df$predicted_probability)</p>
+<p>cat(“=== BONUS PREDICTIONS END ===”)</p>
+</div>
+<div class="section level1">
+<h1>—- AI Usage (commented so it doesn’t break the script) —-</h1>
+</div>
+<div class="section level1">
+<h1>I used ChatGPT (OpenAI GPT-5.1) to help structure and debug R code
+for this assignment.</h1>
+</div>
+<div class="section level1">
+<h1>All modeling decisions, interpretation, and final results were
+performed and validated by me.</h1>
+</div>
+<div class="section level1">
+<h1>Conversation link:</h1>
+</div>
+<div class="section level1">
+<h1><a rel="noopener" href="https://chatgpt.com/share/691e8810-e9f4-8005-a976-b02004dd0eb6" class="uri">https://chatgpt.com/share/691e8810-e9f4-8005-a976-b02004dd0eb6</a></h1>
+</div>
+<div class="footnotes footnotes-end-of-document">
+<hr/>
+<ol>
+<li><p>:space:<a rel="noopener" href="#fnref1" class="footnote-back">↩︎</a></p></li>
+<li><p>:space:<a rel="noopener" href="#fnref2" class="footnote-back">↩︎</a></p></li>
+<li><p>:space:<a rel="noopener" href="#fnref3" class="footnote-back">↩︎</a></p></li>
+<li><p>:space:<a rel="noopener" href="#fnref4" class="footnote-back">↩︎</a></p></li>
+<li><p>:space:<a rel="noopener" href="#fnref5" class="footnote-back">↩︎</a></p></li>
+<li><p>:space:<a rel="noopener" href="#fnref6" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
+
+
+
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script type="module" src="https://s.brightspace.com/lib/bsi/2025.12.237/unbundled/mathjax.js"></script><script type="text/javascript">document.addEventListener('DOMContentLoaded', function() {
+						if (document.querySelector('math, .d2l-element, .d2l-cplus-layout') || /\$\$|\\\(|\\\[|\\begin{|\\ref{|\\eqref{/.test(document.body.innerHTML)) {
+							document.querySelectorAll('mspace[linebreak="newline"]').forEach(elm => {
+								elm.setAttribute('style', 'display: block; height: 0.5rem;');
+							});
+
+							document.querySelectorAll('math mmultiscripts > none').forEach(elm => {
+								const mrow = document.createElementNS('http://www.w3.org/1998/Math/MathML', 'mrow');
+								elm.replaceWith(mrow);
+							});
+
+							window.D2L.MathJax.loadMathJax({
+								outputScale: 1.5,
+								renderLatex: true,
+								enableMML3Support: false
+							});
+						}
+					});</script><script type="module" src="https://s.brightspace.com/lib/bsi/2025.12.237/unbundled/prism.js"></script><script type="text/javascript">document.addEventListener('DOMContentLoaded', function() {
+					document.querySelectorAll('.d2l-code').forEach(code => {
+						window.D2L.Prism.formatCodeElement(code);
+					});
+				});</script><script type="module" src="https://s.brightspace.com/lib/bsi/2025.12.237/unbundled/embeds.js"></script><script type="text/javascript">document.addEventListener('DOMContentLoaded', function() {
+					window.D2L.EmbedRenderer.renderEmbeds(document.body);
+				});</script></body></html>
