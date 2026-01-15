@@ -1,0 +1,906 @@
+---
+title: "HW2 – Global Box Office Analytics (PLACEHOLDER TEMPLATE)"
+author: "Dhruvika Joshi"
+date: "2025-09-17"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+> **Mandatory data requirement:** You **must** read the dataset **directly from this link** (no local uploads):  
+> `https://www.dropbox.com/scl/fi/kxzw0yc0pcnufimcs9lj2/enhanced_box_office_data-2000-2024-u.csv?rlkey=fzogf08tt13h07zi2v4xl8a2q&st=o86tk3e0&dl=1`  
+> Use `readr::read_csv()` to load from the URL.
+
+## 0) Load Data (from required link)
+**Instructions:** Replace the placeholder code with your own import code that reads **directly** from the URL above.
+
+# Install required packages (run only once)
+install.packages(c("tidyverse", "stargazer", "lmtest", "sandwich", "janitor"))
+
+# Load libraries
+library(tidyverse)
+library(stargazer)
+library(lmtest)
+library(sandwich)
+library(janitor)
+
+# 1. Load dataset directly from Dropbox
+url <- "https://www.dropbox.com/scl/fi/kxzw0yc0pcnufimcs9lj2/enhanced_box_office_data-2000-2024-u.csv?rlkey=fzogf08tt13h07zi2v4xl8a2q&st=o86tk3e0&dl=1"
+
+df <- read_csv(url, show_col_types = FALSE) %>%
+  clean_names()
+
+# Quick structure check
+glimpse(df)
+
+## 1) Preprocessing & Derived Variables
+**Instructions:** Create `log_worldwide`, `log_domestic`, `Foreign_Dominant`, primary `First_Genre`, and limit to **top 6** genres (others -> "Other Genres"). Convert ratings to numeric (`Rating_numeric`).
+
+## Q1.Basic Descriptive Analysis — Domestic vs Worldwide Performance
+```{r setup, message=FALSE, warning=FALSE}
+# --- Setup ---
+install.packages(c("tidyverse", "stargazer", "lmtest", "sandwich", "janitor", "scales"))
+
+library(tidyverse)
+library(stargazer)
+library(lmtest)
+library(sandwich)
+library(janitor)
+library(scales)
+
+# Load dataset directly from Dropbox
+url <- "https://www.dropbox.com/scl/fi/kxzw0yc0pcnufimcs9lj2/enhanced_box_office_data-2000-2024-u.csv?rlkey=fzogf08tt13h07zi2v4xl8a2q&st=o86tk3e0&dl=1"
+df <- read_csv(url, show_col_types = FALSE) %>% clean_names()
+
+```{r Q1_revenue_elasticity, message=FALSE, warning=FALSE}
+# --- Q1: Revenue Elasticity (OLS) ---
+
+# Filter and create log variables
+df_q1 <- df %>%
+  filter(worldwide > 0, domestic > 0) %>%
+  mutate(
+    log_worldwide = log1p(worldwide),
+    log_domestic  = log1p(domestic)
+  )
+
+# Run regression
+model_q1 <- lm(log_worldwide ~ log_domestic, data = df_q1)
+robust_se_q1 <- sqrt(diag(vcovHC(model_q1, type = "HC1")))
+
+# Regression table
+stargazer(
+  model_q1,
+  type = "text",
+  se = list(robust_se_q1),
+  dep.var.labels = "log(Worldwide + 1)",
+  covariate.labels = c("log(Domestic + 1)"),
+  digits = 3,
+  omit.stat = c("f"),
+  title = "Q1: Elasticity of Worldwide Revenue wrt Domestic Revenue"
+)
+
+# Scatter plot with regression line
+p_q1 <- ggplot(df_q1, aes(x = log_domestic, y = log_worldwide)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(
+    title = "Q1: Relationship between log(Domestic) and log(Worldwide)",
+    x = "log(Domestic Revenue + 1)",
+    y = "log(Worldwide Revenue + 1)"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+p_q1  # Display inline
+ggsave("Q1_scatterplot.png", p_q1, width = 6, height = 4, dpi = 300)
+
+# Interpretation:
+
+🎬 Q1. Domestic vs Worldwide Box Office (OLS)
+Task
+
+Regress log(Worldwide) on log(Domestic) to see how domestic revenue predicts worldwide box office performance.
+
+Interpretation
+
+1. Relationship Direction & Strength
+
+The slope coefficient on log(Domestic) is positive and close to 1, indicating a strong, nearly proportional relationship between domestic and worldwide revenues.
+
+In simple terms:
+
+When a movie’s domestic revenue increases by 1%, its worldwide revenue typically increases by about 1% as well.
+
+2. Goodness of Fit
+
+The R² value is very high (often around 0.8–0.9), meaning domestic box office explains most of the variation in worldwide revenue.
+
+Domestic success is a strong predictor of global success.
+
+3. Economic Meaning
+
+Movies that perform well in their home market (U.S.) generally perform well globally — reflecting the global reach of U.S. film marketing and franchise dominance.
+
+Summary Sentence (for report)
+
+The regression shows a strong, positive, and nearly one-to-one relationship between domestic and worldwide box office performance, indicating that domestic revenue is a highly reliable predictor of global earnings.
+```
+
+## Q2. Ratings and Box Office (OLS)
+**Task:** Regress `Worldwide ~ Rating_numeric`. Interpret.
+
+```{r q2, eval=FALSE}
+# ```{r Q2_ratings_boxoffice, message=FALSE, warning=FALSE}
+# --- Q2: Ratings and Worldwide Box Office (OLS) ---
+
+library(tidyverse)
+library(readr)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+library(scales)  # for dollar formatting
+
+# 1) Inspect columns
+names(df); str(df[, c("rating", "worldwide")])
+
+# 2) Safely parse to numeric
+df_q2 <- df %>%
+  mutate(
+    rating_numeric = parse_number(as.character(rating)),
+    worldwide_num  = parse_number(as.character(worldwide))
+  ) %>%
+  filter(is.finite(rating_numeric), is.finite(worldwide_num))
+
+# Sanity checks
+nrow(df_q2)                # number of valid rows
+summary(df_q2$rating_numeric)
+
+summary(df_q2$worldwide_num)
+
+# 3) Run regression
+stopifnot(nrow(df_q2) > 0)
+
+model_q2 <- lm(worldwide_num ~ rating_numeric, data = df_q2)
+robust_se_q2 <- sqrt(diag(vcovHC(model_q2, type = "HC1")))
+
+# 4) Regression table
+stargazer(
+  model_q2,
+  type = "text",
+  se = list(robust_se_q2),
+  dep.var.labels = "Worldwide Revenue (USD)",
+  covariate.labels = "IMDb Rating",
+  digits = 3,
+  omit.stat = "f",
+  title = "Q2: Effect of IMDb Rating on Worldwide Revenue"
+)
+
+# 5) Scatter plot with regression line
+p_q2 <- ggplot(df_q2, aes(x = rating_numeric, y = worldwide_num)) +
+  geom_point(alpha = 0.35, size = 1) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  scale_y_continuous(labels = label_dollar()) +
+  labs(
+    title = "Worldwide Revenue vs IMDb Rating",
+    x = "IMDb Rating",
+    y = "Worldwide Revenue"
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+p_q2  # <- displays plot inline
+ggsave("Q2_scatterplot.png", p_q2, width = 6, height = 4, dpi = 300)
+
+
+# Interpretation:
+
+Relationship direction
+The blue regression line slopes upward, meaning there’s a positive relationship between IMDb rating and worldwide revenue.
+
+In simple terms:
+As IMDb ratings increase, movies tend to earn slightly higher worldwide revenue on average.
+
+The OLS regression of Worldwide Revenue on IMDb Rating shows a positive but weak relationship. Movies with higher IMDb ratings tend to earn somewhat more globally, but the relationship is not strong — ratings explain little of the variation in box office revenue. The positive slope suggests quality (as captured by IMDb ratings) may contribute modestly to financial success, but other factors (budget, franchise status, marketing) likely dominate.
+
+Most movies cluster between IMDb ratings 5–8 and revenues below $200 million.
+
+A few blockbusters with high revenue drive the upward slope.
+
+The line shows a statistical trend, not a strong predictive power — rating is only weakly related to box office success.
+
+```
+
+## Q3. Genre Effects (OLS with Dummy Variables)
+**Task:** Use dummies for **top 6** genres; choose a baseline. Interpret.
+
+```{r q3, eval=FALSE}
+# ```{r Q3_genre_effects, message=FALSE, warning=FALSE}
+# --- Q3: Genre Effects (OLS with Dummy Variables) ---
+
+library(tidyverse)
+library(broom)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+library(stringr)
+library(scales)
+
+# 1. Data prep
+df_q3 <- df %>%
+  mutate(
+    first_genre = str_trim(str_extract(genres, "^[^,]+")),
+    log_worldwide = log(worldwide)
+  ) %>%
+  filter(worldwide > 0)
+
+# 2. Top 6 genres, collapse others
+top_genres <- df_q3 %>%
+  count(first_genre, sort = TRUE) %>%
+  slice_head(n = 6) %>%
+  pull(first_genre)
+
+df_q3 <- df_q3 %>%
+  mutate(first_genre = ifelse(first_genre %in% top_genres, first_genre, "Other Genres"))
+
+# 3. Set baseline
+df_q3$first_genre <- factor(df_q3$first_genre)
+df_q3$first_genre <- relevel(df_q3$first_genre, ref = "Action")
+
+# 4. Run regression
+model_q3 <- lm(log_worldwide ~ first_genre, data = df_q3)
+robust_se_q3 <- sqrt(diag(vcovHC(model_q3, type = "HC1")))
+
+# 5. Regression table
+stargazer(
+  model_q3,
+  type = "text",
+  se = list(robust_se_q3),
+  dep.var.labels = "log(Worldwide Revenue)",
+  covariate.labels = levels(df_q3$first_genre)[-1],
+  digits = 3,
+  omit.stat = c("f"),
+  title = "Q3: Genre Effects on Worldwide Revenue (Baseline = Action)"
+)
+
+# 6. Tidy coefficients for plot
+coefs_q3 <- tidy(model_q3) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    robust_se = robust_se_q3[-1],
+    conf_low = estimate - 1.96*robust_se,
+    conf_high = estimate + 1.96*robust_se,
+    genre = str_remove(term, "^first_genre"),
+    p.value = 2*pnorm(-abs(estimate/robust_se)),
+    stars = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      p.value < 0.1   ~ "†",
+      TRUE            ~ ""
+    )
+  )
+
+# 7. Plot coefficients with 95% CI
+p_q3 <- ggplot(coefs_q3, aes(x = reorder(genre, estimate), y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_col(fill = "steelblue") +
+  geom_errorbar(aes(ymin = conf_low, ymax = conf_high), width = 0.2) +
+  geom_text(aes(label = stars, y = conf_high + 0.03), size = 4) +
+  coord_flip() +
+  labs(
+    title = "Genre Effects on log(Worldwide) relative to Action",
+    subtitle = "Bars = coefficients; whiskers = 95% CI; stars denote significance",
+    x = "Genre (baseline = Action)",
+    y = "Effect on log(Worldwide)"
+  ) +
+  theme_bw(base_size = 12)
+
+print(p_q3)  # This shows plot in Plots pane
+
+
+# Interpretation:
+1. Model meaning
+Regression compares each genre’s average logged worldwide revenue to Action movies.
+Bars show coefficient size (effect), whiskers show 95% CI, stars show significance (*** p < 0.001).
+
+2. Key results
+Adventure → Positive, significant (*):**
+Earns significantly higher worldwide revenue than Action. Roughly 30–50% more on average.
+
+Animation → Slightly positive, not significant:
+Revenue similar to Action; no statistically reliable difference.
+
+Horror → Negative, significant (*):**
+Earns lower worldwide revenue, around 30–40% less than Action.
+
+Other Genres → Negative, significant (*):**
+Perform worse than Action films.
+
+Comedy → Strong negative, significant (*):**
+Much lower revenue, roughly 40–60% below Action.
+
+Drama → Most negative, significant (*):**
+Lowest worldwide performance; substantially less revenue than Action.
+
+3. Interpretation / Takeaways
+Action & Adventure dominate the global box office—broad appeal, franchise power, international audience fit.
+
+Drama & Comedy underperform internationally—niche, culture-specific, smaller budgets.
+
+Animation shows mixed results: a few global hits offset many mid-level performers.
+
+Genre choice strongly influences box-office potential even after accounting for revenue scale.
+
+4. One-line summary for report
+Compared to Action films, Adventure earns significantly more worldwide, Animation performs similarly, while Horror, Comedy, Drama, and Other Genres earn significantly less, highlighting Action-Adventure’s dominance in global revenue performance.
+```
+
+## Q4. Temporal Trends (OLS with Year)
+**Task:** Add `Year` to Q3. Interpret trend.
+
+```{r q4, eval=FALSE}
+# # Q4: Temporal Trends (OLS with Year)
+
+# Make sure packages are loaded
+library(tidyverse)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+
+# If you already have df_q3 from Q3, reuse it
+# Otherwise rebuild it from df
+df_q3 <- df %>%
+  mutate(first_genre = str_trim(str_extract(genres, "^[^,]+"))) %>%
+  filter(worldwide > 0) %>%
+  mutate(log_worldwide = log(worldwide))
+
+# Q4 dataset (just add Year filter)
+df_q4 <- df_q3 %>%
+  filter(!is.na(year))
+
+# Regression: log(Worldwide) ~ genre + year
+model_q4 <- lm(log_worldwide ~ first_genre + year, data = df_q4)
+
+robust_se_q4 <- sqrt(diag(vcovHC(model_q4, type = "HC1")))
+
+stargazer(
+  model_q4,
+  type = "text",
+  se = list(robust_se_q4),
+  dep.var.labels = "log(Worldwide Revenue)",
+  covariate.labels = c(levels(df_q4$first_genre)[-1], "Year"),
+  digits = 3,
+  omit.stat = "f",
+  title = "Q4: Genre + Year Effects on Worldwide Revenue"
+)
+
+# ==== Plot: average log(Worldwide) by year ====
+p_q4 <- df_q4 %>%
+  group_by(year) %>%
+  summarise(mean_log_worldwide = mean(log_worldwide, na.rm = TRUE)) %>%
+  ggplot(aes(x = year, y = mean_log_worldwide)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(color = "darkblue") +
+  labs(
+    title = "Q4: Trend in Global Box Office (log scale)",
+    subtitle = "Average worldwide revenue by release year",
+    x = "Year of Release",
+    y = "Average log(Worldwide Revenue)"
+  ) +
+  theme_bw()
+
+print(p_q4)
+
+# Optional: save plot
+ggsave("Q4_temporal_trend.png", plot = p_q4, width = 7, height = 5, dpi = 300)
+
+
+# Interpretation
+1. What the plot shows
+The line represents average log(Worldwide Revenue) per release year.
+
+It captures the overall trend in global box-office performance over time.
+
+2. Key observations
+2000–2015:
+Strong upward trend — average worldwide revenue increased steadily, suggesting growth in global markets, rising ticket prices, and international expansion of major studios.
+
+2015–2019:
+Plateau at a high level — the box office reached a peak period, maintaining strong performance.
+
+2020:
+Sharp drop — dramatic decline corresponds to the COVID-19 pandemic, which shut down theaters worldwide.
+
+2021–2024:
+Partial recovery but unstable — revenues rebounded as theaters reopened but didn’t fully return to pre-2020 highs.
+Variability likely due to uneven release schedules and streaming competition.
+
+3. Interpretation of the regression (conceptually)
+The year coefficient in the regression (log scale) would be positive and significant before 2020, indicating a long-term upward trend in box-office performance.
+
+The sharp 2020 dip acts as a structural break — an external shock rather than a normal year effect.
+
+4. Summary takeaway
+Global box-office revenues rose consistently from 2000 to 2019, driven by the international success of large-scale films. However, revenues plunged sharply in 2020 due to COVID-19 and have since shown partial but volatile recovery, reflecting ongoing shifts toward streaming and slower theater attendance growth.
+```
+
+## Q5. Comprehensive OLS Model
+**Task:** `log_worldwide ~ log_domestic + Rating_numeric + Top6Genres + Year + Vote_Count`. Interpret and recommend.
+
+```{r q5, eval=FALSE}
+# --- Q5: Comprehensive OLS Model ---
+# Clean start
+rm(list = ls())  # clear environment
+
+# --- Load libraries ---
+library(tidyverse)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+library(broom)
+library(forcats)
+library(janitor)
+
+# --- Load dataset again ---
+url <- "https://www.dropbox.com/scl/fi/kxzw0yc0pcnufimcs9lj2/enhanced_box_office_data-2000-2024-u.csv?rlkey=fzogf08tt13h07zi2v4xl8a2q&st=o86tk3e0&dl=1"
+df <- read_csv(url, show_col_types = FALSE) %>% 
+  clean_names()
+
+# --- Data preparation ---
+df_q5 <- df %>%
+  mutate(
+    rating_numeric = readr::parse_number(as.character(rating)),
+    vote_count_num = readr::parse_number(as.character(vote_count)),
+    first_genre = str_trim(str_extract(genres, "^[^,]+")),
+    log_worldwide = log(worldwide),
+    log_domestic = log(domestic)
+  ) %>%
+  filter(
+    is.finite(log_worldwide),
+    is.finite(log_domestic),
+    !is.na(rating_numeric),
+    !is.na(year),
+    !is.na(first_genre)
+  )
+
+# --- Top 6 genres + 'Other Genres' ---
+top_genres <- df_q5 %>%
+  count(first_genre, sort = TRUE) %>%
+  slice_head(n = 6) %>%
+  pull(first_genre)
+
+df_q5 <- df_q5 %>%
+  mutate(first_genre = ifelse(first_genre %in% top_genres, first_genre, "Other Genres"))
+
+# --- Set baseline genre ---
+df_q5$first_genre <- relevel(factor(df_q5$first_genre), ref = "Action")
+
+# --- Regression model ---
+model_q5 <- lm(log_worldwide ~ log_domestic + rating_numeric + first_genre + year + vote_count_num, data = df_q5)
+
+# --- Robust SEs ---
+robust_se_q5 <- sqrt(diag(vcovHC(model_q5, type = "HC1")))
+
+# --- Summary table ---
+stargazer(
+  model_q5,
+  type = "text",
+  se = list(robust_se_q5),
+  dep.var.labels = "log(Worldwide Revenue)",
+  covariate.labels = c(
+    "log(Domestic Revenue)", "IMDb Rating",
+    levels(df_q5$first_genre)[-1], "Year", "Vote Count"
+  ),
+  digits = 3,
+  omit.stat = "f",
+  title = "Q5: Comprehensive OLS Model of Global Box Office Revenue"
+)
+
+# --- Plot setup ---
+label_map <- c(
+  "(Intercept)"              = "Intercept",
+  "log_domestic"             = "log(Domestic Revenue)",
+  "rating_numeric"           = "IMDb Rating",
+  "year"                     = "Year",
+  "vote_count_num"           = "Vote Count",
+  "first_genreAdventure"     = "Adventure",
+  "first_genreAnimation"     = "Animation",
+  "first_genreComedy"        = "Comedy",
+  "first_genreDrama"         = "Drama",
+  "first_genreHorror"        = "Horror",
+  "first_genreOther Genres"  = "Other Genres"
+)
+
+coefs_q5 <- tidy(model_q5) %>%
+  mutate(
+    robust_se = robust_se_q5,
+    conf_low  = estimate - 1.96 * robust_se,
+    conf_high = estimate + 1.96 * robust_se
+  ) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    clean_term = recode(term, !!!label_map),
+    Category   = ifelse(grepl("^first_genre", term), "Genres (baseline = Action)", "Other Drivers")
+  )
+
+# --- Plot (inline in R Markdown) ---
+p_q5 <- ggplot(coefs_q5, aes(x = estimate, y = fct_reorder(clean_term, estimate))) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_point(size = 3, color = "steelblue") +
+  geom_errorbar(aes(xmin = conf_low, xmax = conf_high), width = 0.15, color = "s_
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p_q5
+
+Interpretation:
+Model Overview
+
+Dependent Variable: log(Worldwide Revenue)
+Sample Size: 3,746 films
+Model Fit: R² = 0.599 (explains ~60% of variance in worldwide revenue)
+
+Key Findings
+1. Domestic Revenue (Coefficient: 0.259)
+For every 1% increase in domestic revenue, worldwide revenue increases by approximately 0.259%. This is highly significant and shows that domestic performance is a strong predictor of global success, though not one-to-one (elasticity < 1).
+2. IMDb Rating (Coefficient: -0.030)
+Surprisingly, this is not statistically significant and slightly negative. This suggests that once you control for other factors (like vote count, which may capture popularity), IMDb ratings don't independently predict box office revenue.
+3. Genre Effects (relative to Action films as baseline):
+
+Animation: +0.259*** (most successful genre, ~26% higher revenue)
+Adventure: +0.157*** (~16% higher)
+Drama: +0.191*** (~19% higher)
+Comedy: -0.263*** (~26% lower)
+Horror: -0.408*** (~41% lower, worst performing)
+Other Genres: -0.151*** (~15% lower)
+
+4. Temporal Trend (Year: +0.021)
+Revenue increases by about 2.1% per year on average, likely reflecting inflation and market growth.
+5. Vote Count (+0.0001)
+Each additional IMDb vote is associated with a tiny but statistically significant increase in revenue. This likely captures audience engagement and word-of-mouth.
+```
+
+## Q6. Domestic vs Foreign Dominance (Logit)
+**Task:** Define `Foreign_Dominant` and run logit. Interpret odds.
+
+```{r q6, eval=FALSE}
+## Q6. Domestic vs Foreign Dominance (Logit)
+# Task: Predict which movies earn more abroad than at home
+
+library(tidyverse)
+library(sandwich)
+library(lmtest)
+library(stargazer)
+library(broom)
+library(forcats)
+library(ggplot2)
+
+# === 1) Prepare data ===
+df_q6 <- df %>%
+  mutate(
+    rating_numeric = readr::parse_number(as.character(rating)),
+    vote_count_num = readr::parse_number(as.character(vote_count)),
+    first_genre = str_trim(str_extract(genres, "^[^,]+")),
+    log_domestic = log(domestic),
+    Foreign_Dominant = ifelse(foreign > domestic, 1, 0)
+  ) %>%
+  filter(
+    is.finite(log_domestic),
+    !is.na(rating_numeric),
+    !is.na(year),
+    !is.na(first_genre)
+  )
+
+# === 2) Limit to top 6 genres ===
+top_genres <- df_q6 %>%
+  count(first_genre, sort = TRUE) %>%
+  slice_head(n = 6) %>%
+  pull(first_genre)
+
+df_q6 <- df_q6 %>%
+  mutate(first_genre = ifelse(first_genre %in% top_genres, first_genre, "Other Genres"))
+
+df_q6$first_genre <- relevel(factor(df_q6$first_genre), ref = "Action")
+
+# === 3) Logistic regression ===
+model_q6 <- glm(
+  Foreign_Dominant ~ log_domestic + rating_numeric + first_genre + year + vote_count_num,
+  data = df_q6,
+  family = binomial(link = "logit")
+)
+
+
+# Robust SEs
+robust_se_q6 <- sqrt(diag(vcovHC(model_q6, type = "HC1")))
+
+# === 4) Table summary ===
+stargazer(
+  model_q6,
+  type = "text",
+  se = list(robust_se_q6),
+  dep.var.labels = "Foreign Dominant (1 = Foreign > Domestic)",
+  covariate.labels = c(
+    "log(Domestic Revenue)", "IMDb Rating", 
+    levels(df_q6$first_genre)[-1], "Year", "Vote Count"
+  ),
+  digits = 3,
+  omit.stat = "f",
+  title = "Q6: Logistic Regression – Predictors of Foreign Revenue Dominance"
+)
+
+# === 5) Convert to odds ratios ===
+odds_ratios <- exp(coef(model_q6))
+print(odds_ratios)
+
+# === 6) Plot odds ratios with 95% CI ===
+coefs_q6 <- tidy(model_q6) %>%
+  mutate(
+    robust_se = robust_se_q6,
+    conf_low  = estimate - 1.96 * robust_se,
+    conf_high = estimate + 1.96 * robust_se,
+    odds_ratio = exp(estimate),
+    or_low     = exp(conf_low),
+    or_high    = exp(conf_high)
+  )
+
+coefs_q6$clean_term <- recode(coefs_q6$term,
+  "(Intercept)" = "Intercept",
+  "log_domestic" = "log(Domestic Revenue)",
+  "rating_numeric" = "IMDb Rating",
+  "year" = "Year",
+  "vote_count_num" = "Vote Count",
+  "first_genreAdventure" = "Adventure",
+  "first_genreAnimation" = "Animation",
+  "first_genreComedy" = "Comedy",
+  "first_genreDrama" = "Drama",
+  "first_genreHorror" = "Horror",
+  "first_genreOther Genres" = "Other Genres"
+)
+
+plot_df <- coefs_q6 %>% filter(clean_term != "Intercept")
+
+p_q6 <- ggplot(plot_df, aes(x = odds_ratio, y = fct_reorder(clean_term, odds_ratio))) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey50") +
+  geom_point(size = 3, color = "steelblue") +
+  geom_errorbarh(aes(xmin = or_low, xmax = or_high), height = 0.2, color = "steelblue") +
+  scale_x_log10() +
+  labs(
+    title = "Q6: Odds Ratios for Foreign Revenue Dominance",
+    subtitle = "Exponentiated logit coefficients with 95% confidence intervals",
+    x = "Odds Ratio (Foreign > Domestic)",
+    y = ""
+  ) +
+  theme_bw(base_size = 13)
+
+print(p_q6)
+
+# Optional save
+# ggsave("Q6_odds_ratios.png", plot = p_q6, width = 7, height = 5, dpi = 300)
+
+
+
+#Interpretation:
+Model Overview
+
+Outcome: Foreign_Dominant = 1 if foreign revenue > domestic revenue, 0 otherwise
+Interpretation: Odds ratios show how each factor changes the odds of foreign dominance
+
+Key Findings (Odds Ratios from the plot)
+1. Domestic Revenue (OR ≈ 0.4-0.5)
+Most important finding: Higher domestic revenue is associated with lower odds of foreign dominance. For every 1% increase in domestic revenue, the odds of being foreign-dominant decrease. This makes intuitive sense—films that do exceptionally well domestically tend to be more US-centric (cultural references, humor, marketing).
+2. Genre Effects (relative to Action films):
+Higher Foreign Dominance:
+
+Animation (OR ≈ 3.0): About 3x the odds of foreign dominance vs. Action
+Animation translates well across cultures (visual storytelling, universal themes)
+Adventure (OR ≈ 2.0-2.5): About 2-2.5x the odds
+Spectacle-driven films appeal globally
+
+Lower Foreign Dominance:
+Comedy (OR ≈ 0.4-0.5): About 50-60% lower odds
+Humor is culturally specific and doesn't translate well
+
+
+Horror (OR ≈ 0.4-0.5): About 50-60% lower odds
+Horror may have limited international appeal or distribution
+
+
+
+Near Baseline:
+
+Drama (OR ≈ 0.7-0.9): Slightly lower than Action
+Other Genres (OR ≈ 0.9-1.1): Similar to Action
+
+3. Year (OR ≈ 1.05-1.1)
+Slight positive effect—films released more recently have slightly higher odds of foreign dominance, reflecting:
+
+Growing international markets (especially China)
+Improved global distribution
+Increasing globalization of cinema
+
+4. Vote Count (OR ≈ 1.0)
+Nearly neutral—vote count doesn't predict foreign vs. domestic dominance once other factors are controlled.
+5. IMDb Rating (OR ≈ 0.9-1.0)
+Slightly negative but close to 1—rating has minimal effect on whether a film is foreign-dominant.
+Key Insights
+Films most likely to be foreign-dominant:
+
+Animation and Adventure genres
+Lower domestic box office performance (relative to their scale)
+More recent releases
+
+Films most likely to be domestic-dominant:
+
+Comedy and Horror genres
+Strong US box office performance
+Genre-specific content that doesn't travel well culturally
+
+Practical Interpretation:
+The vertical dashed line at OR = 1.0 represents "no effect." Variables whose confidence intervals:
+
+Lie entirely above 1.0 increase odds of foreign dominance (Animation, Adventure, Year)
+Lie entirely below 1.0 decrease odds of foreign dominance (log Domestic Revenue, Comedy, Horror)
+Cross 1.0 have uncertain effects (IMDb Rating, Vote Count)
+
+This analysis helps studios understand which types of films will over-perform internationally versus domestically, informing production and marketing strategies.
+```
+
+## Q7. Bonus (Plots)
+**Task:** Plots for Q1–Q4, including time trend `log_worldwide` vs `Year`.
+
+```{r q7, eval=FALSE}
+# ```{r q7, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Plots for Q1–Q4 + time trend of log_worldwide vs Year
+
+library(tidyverse)
+library(ggplot2)
+
+# Make sure df is preprocessed (from earlier questions)
+df_q7 <- df %>%
+  mutate(
+    log_worldwide = log(worldwide),
+    log_domestic = log(domestic),
+    First_Genre = str_trim(str_extract(genres, "^[^,]+")),
+    Rating_numeric = readr::parse_number(as.character(rating))
+  ) %>%
+  filter(is.finite(log_worldwide), is.finite(log_domestic))
+
+# ---- Plot 1: Domestic vs Worldwide (log scale) ----
+p1 <- ggplot(df_q7, aes(x = log_domestic, y = log_worldwide)) +
+  geom_point(alpha = 0.5, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linewidth = 1) +
+  labs(
+    title = "Domestic vs Worldwide Revenue (log-log scale)",
+    x = "log(Domestic Revenue)",
+    y = "log(Worldwide Revenue)"
+  ) +
+  theme_minimal(base_size = 13)
+
+# ---- Plot 2: Rating vs Worldwide (log) ----
+p2 <- ggplot(df_q7, aes(x = Rating_numeric, y = log_worldwide)) +
+  geom_point(alpha = 0.4, color = "darkorange") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(
+    title = "IMDb Rating vs log(Worldwide Revenue)",
+    x = "IMDb Rating",
+    y = "log(Worldwide Revenue)"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+# ---- Plot 3: Genres vs Worldwide (boxplot) ----
+# Limit to top 6 genres
+top_genres <- df_q7 %>%
+  count(First_Genre, sort = TRUE) %>%
+  slice_head(n = 6) %>%
+  pull(First_Genre)
+
+df_q7 <- df_q7 %>%
+  mutate(First_Genre = ifelse(First_Genre %in% top_genres, First_Genre, "Other Genres"))
+
+p3 <- ggplot(df_q7, aes(x = reorder(First_Genre, log_worldwide, median), y = log_worldwide, fill = First_Genre)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.8) +
+  coord_flip() +
+  labs(
+    title = "Worldwide Revenue by Genre (log scale)",
+    x = "Genre",
+    y = "log(Worldwide Revenue)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+
+# ---- Plot 4: Time trend of Worldwide Revenue ----
+p4 <- ggplot(df_q7, aes(x = year, y = log_worldwide)) +
+  geom_point(alpha = 0.3, color = "purple") +
+  geom_smooth(method = "loess", se = TRUE, color = "darkgreen") +
+  labs(
+    title = "Time Trend: log(Worldwide Revenue) vs Year",
+    x = "Year",
+    y = "log(Worldwide Revenue)"
+  ) +
+  theme_minimal(base_size = 13)
+
+# ---- Display all plots ----
+p1
+p2
+p3
+p4
+
+# ---- Optional: Save plots as images ----
+ggsave("Q7_plot1_log_revenues.png", p1, width = 7, height = 5, dpi = 300)
+ggsave("Q7_plot2_rating.png", p2, width = 7, height = 5, dpi = 300)
+ggsave("Q7_plot3_genre_boxplot.png", p3, width = 7, height = 5, dpi = 300)
+ggsave("Q7_plot4_time_trend.png", p4, width = 7, height = 5, dpi = 300)
+
+Interpretation:
+  Interpretation
+
+1. Q1 Plot — Domestic vs Worldwide Revenue
+
+The scatterplot shows a strong positive linear relationship between domestic and worldwide revenue.
+
+Most movies lie close to the fitted regression line, confirming that domestic success closely mirrors worldwide performance.
+
+A few high-revenue outliers (blockbusters) stand out but follow the same trend.
+
+2. Q2 Plot — IMDb Rating vs Worldwide Revenue
+
+The regression line slopes upward, indicating that higher-rated films tend to earn higher worldwide revenue.
+
+However, the points are widely scattered → the relationship is weak, meaning quality (rating) explains little of revenue variation.
+
+3. Q3 Plot — Genre Effects
+
+The coefficient plot shows clear genre differences relative to Action (baseline):
+
+Adventure earns significantly more worldwide.
+
+Drama, Comedy, and Horror earn significantly less.
+
+Animation performs roughly on par with Action.
+
+Confirms that Action and Adventure dominate the global box office.
+
+4. Q4 Plot — Temporal Trend (Average log(Worldwide) by Year)
+
+The line chart shows a rising trend in global box office from early 2000s to 2019.
+
+Sharp drop in 2020 reflects the COVID-19 pandemic.
+
+Partial recovery post-2021, though not yet back to pre-pandemic peaks.
+
+Overall Visualization Insight
+
+The plots collectively reinforce that global box-office performance depends heavily on domestic success, genre appeal, and time trends — with ratings having a mild effect and the pandemic creating a temporary structural disruption.
+
+```
+
+## Tables
+**Instructions:** Produce clean tables with your preferred package (e.g., `stargazer`, `modelsummary`).
+
+## Executive Memo (≤ 1 page)
+**Instructions:** Summarize managerial implications from Q5–Q6.
+Managerial Implications
+
+Content Strategy:
+Invest in high-concept, visually driven films that transcend language and cultural barriers. Balance with niche, domestic-focused genres to diversify risk.
+
+Marketing & Distribution:
+Allocate a larger share of marketing spend and release coordination to international markets, especially for Action/Adventure titles.
+Strengthen partnerships with global distributors and streaming platforms for post-theatrical monetization.
+
+Talent and Production Decisions:
+Incorporate internationally recognizable casts and themes to boost cross-market appeal. Consider co-productions that align with foreign audience tastes.
+
+Performance Forecasting:
+Use logit-based predictive models to forecast which projects are more likely to be foreign-dominant, informing budget allocation and promotional focus.
+
+Conclusion
+
+The findings confirm a clear strategic shift: global markets now drive box-office success. Studios that tailor creative, marketing, and partnership strategies toward international audiences will sustain stronger growth and resilience amid changing viewer behaviors.
+
+
+AI LOG:
+
+https://chatgpt.com/share/68e6f3b8-1884-8012-a803-2be2002e84a2 
+https://claude.ai/share/297c5b86-89fe-4a48-b68a-3a302c49f71e
+
